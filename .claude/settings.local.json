@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(mkdir -p backend/app/models backend/app/schemas backend/app/routers backend/app/services backend/app/sync backend/app/cache backend/data frontend)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(venv/Scripts/uvicorn app.main:app --port 8000)"
+    ]
+  }
+}

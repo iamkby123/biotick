@@ -1,0 +1,986 @@
+"use client";
+
+import { use, useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  ExternalLink,
+  Globe,
+  Loader2,
+  FlaskConical,
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  BarChart3,
+  Calendar,
+  Beaker,
+} from "lucide-react";
+import { fetchAPI } from "@/lib/api";
+import type { Company, Drug, Trial } from "@/lib/types";
+import { formatMarketCap, formatPrice, formatPercent, cn, formatNumber } from "@/lib/utils";
+import { PHASE_COLORS, PHASE_LABELS, THERAPEUTIC_AREA_COLORS, STATUS_COLORS, STATUS_LABELS } from "@/lib/constants";
+
+interface Filing {
+  id: number;
+  filing_type: string;
+  filed_date: string | null;
+  edgar_url: string | null;
+  description: string | null;
+}
+
+interface InsiderTrade {
+  id: number;
+  insider_name: string;
+  insider_title: string | null;
+  trade_type: string;
+  transaction_date: string | null;
+  shares: number;
+  price_per_share: number | null;
+  total_value: number | null;
+}
+
+interface InsiderSummary {
+  total_buy_value: number;
+  total_sell_value: number;
+  net_value: number;
+  buy_transactions: number;
+  sell_transactions: number;
+  signal: string;
+}
+
+interface OptionRow {
+  strike: number;
+  bid: number;
+  ask: number;
+  last: number;
+  volume: number;
+  open_interest: number;
+  iv: number;
+  in_the_money: boolean;
+}
+
+export default function CompanyDetailPage({
+  params,
+}: {
+  params: Promise<{ ticker: string }>;
+}) {
+  const { ticker } = use(params);
+  const [activeTab, setActiveTab] = useState<"overview" | "pipeline" | "trials" | "options" | "filings">("overview");
+  const [selectedExpiration, setSelectedExpiration] = useState<string | null>(null);
+
+  const { data: company, isLoading } = useQuery<Company>({
+    queryKey: ["company", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}`),
+  });
+
+  const { data: pipeline } = useQuery<Drug[]>({
+    queryKey: ["pipeline", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/pipeline`),
+  });
+
+  const { data: trialsData } = useQuery<{ trials: Trial[]; total: number }>({
+    queryKey: ["all-trials", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/all-trials?per_page=50`),
+  });
+
+  const { data: filingsData } = useQuery<{ filings: Filing[] }>({
+    queryKey: ["filings", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/filings?per_page=20`),
+  });
+
+  const { data: tradesData } = useQuery<{ trades: InsiderTrade[] }>({
+    queryKey: ["insider-trades", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/insider-trades?per_page=10`),
+  });
+
+  const { data: insiderSummary } = useQuery<InsiderSummary>({
+    queryKey: ["insider-summary", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/insider-summary`),
+  });
+
+  const { data: expirations } = useQuery<{ expirations: string[] }>({
+    queryKey: ["options-exp", ticker],
+    queryFn: () => fetchAPI(`/options/${ticker}/expirations`),
+    enabled: activeTab === "options",
+  });
+
+  const { data: competitorData } = useQuery<{
+    therapeutic_areas: string[];
+    competitors: Array<{ ticker: string; name: string; price: number | null; market_cap: number | null; pipeline_size: number; overlapping_areas: Record<string, number> }>;
+  }>({
+    queryKey: ["competitors", ticker],
+    queryFn: () => fetchAPI(`/competitors/company/${ticker}`),
+    enabled: activeTab === "overview",
+  });
+
+  const { data: shortData } = useQuery<{
+    short_interest: Array<{ date: string; short_interest: number; days_to_cover: number }>;
+    institutional_ownership: Array<{ name: string; shares: number; change: number }>;
+    insider_sentiment: Array<{ month: string; change: number; mspr: number }>;
+  }>({
+    queryKey: ["short-interest", ticker],
+    queryFn: () => fetchAPI(`/edge/short-interest/${ticker}`),
+    enabled: activeTab === "overview",
+  });
+
+  const { data: chainData } = useQuery<{ calls: OptionRow[]; puts: OptionRow[] }>({
+    queryKey: ["options-chain", ticker, selectedExpiration],
+    queryFn: () => fetchAPI(`/options/${ticker}/chain?expiration=${selectedExpiration}`),
+    enabled: activeTab === "options" && !!selectedExpiration,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-5 h-5 animate-spin text-accent" />
+      </div>
+    );
+  }
+
+  if (!company) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-muted">Company not found</p>
+      </div>
+    );
+  }
+
+  const changePositive = (company.price_change_pct ?? 0) >= 0;
+
+  const tabs = [
+    { id: "overview" as const, label: "Overview" },
+    { id: "pipeline" as const, label: "Pipeline", count: pipeline?.length },
+    { id: "trials" as const, label: "Clinical Trials", count: trialsData?.total },
+    { id: "options" as const, label: "Options Chain" },
+    { id: "filings" as const, label: "SEC Filings", count: filingsData?.filings?.length },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Back */}
+      <Link href="/companies" className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition">
+        <ArrowLeft className="w-3.5 h-3.5" />
+        Screener
+      </Link>
+
+      {/* Stock header */}
+      <div className="flex items-start justify-between gap-6">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold">{company.name}</h1>
+            <span className="text-xs bg-surface-hover px-2 py-0.5 rounded text-muted font-mono">{company.ticker}</span>
+          </div>
+          <div className="flex items-baseline gap-3 mt-2">
+            <span className="text-4xl font-bold tracking-tight font-mono">{formatPrice(company.price)}</span>
+            <span className={cn("text-lg font-semibold flex items-center gap-0.5", changePositive ? "text-positive" : "text-negative")}>
+              {changePositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+              {formatPercent(company.price_change_pct)}
+            </span>
+          </div>
+          <div className="flex gap-6 mt-3 text-xs">
+            <Stat label="Market Cap" value={formatMarketCap(company.market_cap)} />
+            <Stat label="Exchange" value={company.exchange || "N/A"} />
+            <Stat label="Sector" value={company.sector || "Biotech"} />
+            {company.website && (
+              <a href={company.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-accent hover:underline">
+                <Globe className="w-3 h-3" /> Website
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Insider summary */}
+        {insiderSummary && (insiderSummary.buy_transactions > 0 || insiderSummary.sell_transactions > 0) && (
+          <div className={cn("rounded-lg border p-4 text-right shrink-0 min-w-[180px]",
+            insiderSummary.signal === "BULLISH" ? "border-positive/30 bg-positive/5" :
+            insiderSummary.signal === "BEARISH" ? "border-negative/30 bg-negative/5" : "border-border bg-surface"
+          )}>
+            <p className="text-[10px] text-muted uppercase font-semibold">90-Day Insider</p>
+            <p className={cn("text-xl font-bold font-mono mt-1",
+              insiderSummary.signal === "BULLISH" ? "text-positive" : insiderSummary.signal === "BEARISH" ? "text-negative" : ""
+            )}>
+              {insiderSummary.signal}
+            </p>
+            <p className="text-[11px] text-muted mt-1">{insiderSummary.buy_transactions} buys / {insiderSummary.sell_transactions} sells</p>
+          </div>
+        )}
+      </div>
+
+      {company.description && (
+        <p className="text-sm text-muted leading-relaxed max-w-3xl line-clamp-2">{company.description}</p>
+      )}
+
+      {/* Tabs */}
+      <div className="border-b border-border">
+        <div className="flex gap-0">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id === "options" && expirations?.expirations?.[0] && !selectedExpiration) {
+                  setSelectedExpiration(expirations.expirations[0]);
+                }
+              }}
+              className={cn(
+                "px-4 py-2.5 text-[13px] font-medium border-b-2 transition-colors",
+                activeTab === tab.id
+                  ? "border-accent text-accent"
+                  : "border-transparent text-muted hover:text-foreground"
+              )}
+            >
+              {tab.label}
+              {tab.count !== undefined && (
+                <span className="ml-1.5 text-[11px] text-muted">({tab.count})</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      {activeTab === "overview" && (
+        <OverviewTab
+          company={company}
+          pipeline={pipeline || []}
+          insiderSummary={insiderSummary}
+          trialsTotal={trialsData?.total || 0}
+          filingsCount={filingsData?.filings?.length || 0}
+          competitors={competitorData}
+          shortInterest={shortData}
+        />
+      )}
+
+      {activeTab === "pipeline" && (
+        <PipelineTab pipeline={pipeline || []} />
+      )}
+
+      {activeTab === "trials" && (
+        <TrialsTab trials={trialsData?.trials || []} total={trialsData?.total || 0} />
+      )}
+
+      {activeTab === "options" && (
+        <OptionsTab
+          expirations={expirations?.expirations || []}
+          selectedExpiration={selectedExpiration}
+          onSelectExpiration={setSelectedExpiration}
+          chain={chainData}
+        />
+      )}
+
+      {activeTab === "filings" && (
+        <FilingsTab
+          filings={filingsData?.filings || []}
+          trades={tradesData?.trades || []}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── TradingView Chart ── */
+function TradingViewChart({ ticker }: { ticker: string }) {
+  const containerId = `tv-chart-${ticker}`;
+
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol: ticker,
+      interval: "D",
+      timezone: "America/New_York",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      backgroundColor: "rgba(0, 0, 0, 0)",
+      gridColor: "rgba(255, 255, 255, 0.04)",
+      hide_top_toolbar: false,
+      hide_legend: false,
+      allow_symbol_change: false,
+      save_image: false,
+      calendar: false,
+      hide_volume: false,
+      support_host: "https://www.tradingview.com",
+    });
+
+    const container = document.getElementById(containerId);
+    if (container) {
+      container.innerHTML = "";
+      const widget = document.createElement("div");
+      widget.className = "tradingview-widget-container__widget";
+      widget.style.height = "100%";
+      widget.style.width = "100%";
+      container.appendChild(widget);
+      container.appendChild(script);
+    }
+
+    return () => {
+      const container = document.getElementById(containerId);
+      if (container) container.innerHTML = "";
+    };
+  }, [ticker, containerId]);
+
+  return (
+    <div
+      id={containerId}
+      className="tradingview-widget-container rounded-lg overflow-hidden border border-border"
+      style={{ height: "500px", width: "100%", minWidth: "100%" }}
+    />
+  );
+}
+
+/* ── Overview Tab ── */
+function OverviewTab({
+  company,
+  pipeline,
+  insiderSummary,
+  trialsTotal,
+  filingsCount,
+  competitors,
+  shortInterest,
+}: {
+  company: Company;
+  pipeline: Drug[];
+  insiderSummary: InsiderSummary | undefined;
+  trialsTotal: number;
+  filingsCount: number;
+  competitors: { therapeutic_areas: string[]; competitors: Array<{ ticker: string; name: string; price: number | null; market_cap: number | null; pipeline_size: number }> } | undefined;
+  shortInterest: { short_interest: Array<{ date: string; short_interest: number; days_to_cover: number }>; institutional_ownership: Array<{ name: string; shares: number; change: number }>; insider_sentiment: Array<{ month: string; change: number; mspr: number }> } | undefined;
+}) {
+  // Count drugs by phase
+  const phaseCount: Record<string, number> = {};
+  pipeline.forEach((d) => {
+    const p = d.highest_phase || "OTHER";
+    phaseCount[p] = (phaseCount[p] || 0) + 1;
+  });
+
+  // Count by therapeutic area
+  const areaCount: Record<string, number> = {};
+  pipeline.forEach((d) => {
+    const a = d.therapeutic_area || "Other";
+    areaCount[a] = (areaCount[a] || 0) + 1;
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* TradingView Chart */}
+      {/* Chart breaks out of container for full width */}
+      <div className="-mx-6 lg:-mx-10">
+        <TradingViewChart ticker={company.ticker} />
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <MiniStat label="Pipeline" value={String(pipeline.length)} sublabel="drug programs" />
+        <MiniStat label="Trials" value={String(trialsTotal)} sublabel="clinical trials" />
+        <MiniStat label="Filings" value={String(filingsCount)} sublabel="SEC filings" />
+        <MiniStat
+          label="Insider Signal"
+          value={insiderSummary?.signal || "N/A"}
+          sublabel="90-day activity"
+          color={
+            insiderSummary?.signal === "BULLISH"
+              ? "text-positive"
+              : insiderSummary?.signal === "BEARISH"
+                ? "text-negative"
+                : undefined
+          }
+        />
+      </div>
+
+      {/* Company Info + Financials */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Key Financials */}
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Key Data</h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px]">
+            <DataRow label="Market Cap" value={formatMarketCap(company.market_cap)} />
+            <DataRow label="Revenue" value={company.revenue ? formatMarketCap(company.revenue) : "N/A"} />
+            <DataRow label="P/E Ratio" value={company.pe_ratio ? company.pe_ratio.toFixed(1) : "N/A"} />
+            <DataRow label="Beta" value={company.beta ? company.beta.toFixed(2) : "N/A"} />
+            <DataRow label="Profit Margin" value={company.profit_margin ? `${(company.profit_margin * 100).toFixed(1)}%` : "N/A"} />
+            <DataRow label="Dividend Yield" value={company.dividend_yield ? `${(company.dividend_yield * 100).toFixed(2)}%` : "N/A"} />
+            <DataRow label="52W High" value={company.fifty_two_week_high ? `$${company.fifty_two_week_high.toFixed(2)}` : "N/A"} />
+            <DataRow label="52W Low" value={company.fifty_two_week_low ? `$${company.fifty_two_week_low.toFixed(2)}` : "N/A"} />
+            <DataRow label="Avg Volume" value={company.avg_volume ? formatNumber(company.avg_volume) : "N/A"} />
+            <DataRow label="Shares Out" value={company.shares_outstanding ? formatMarketCap(company.shares_outstanding) : "N/A"} />
+            <DataRow label="Employees" value={company.employees ? formatNumber(company.employees) : "N/A"} />
+            <DataRow label="Founded" value={company.founded_year || "N/A"} />
+          </div>
+        </div>
+
+        {/* Location + Map */}
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Headquarters</h3>
+          {company.city || company.state || company.country ? (
+            <div className="space-y-3">
+              <div className="text-sm">
+                {company.address && <p>{company.address}</p>}
+                <p>
+                  {[company.city, company.state, company.zip_code].filter(Boolean).join(", ")}
+                </p>
+                {company.country && <p className="text-muted">{company.country}</p>}
+                {company.phone && <p className="text-muted mt-1">{company.phone}</p>}
+              </div>
+              {/* Google Maps embed */}
+              <div className="rounded-lg overflow-hidden border border-border h-[180px]">
+                <iframe
+                  src={`https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${encodeURIComponent(
+                    [company.address, company.city, company.state, company.country].filter(Boolean).join(", ")
+                  )}&zoom=12`}
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0, filter: "invert(90%) hue-rotate(180deg)" }}
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted">
+              <p>Location data not available yet.</p>
+              <p className="text-[11px] mt-1">Run market data sync to populate.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* About */}
+      {company.description && (
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-2">About</h3>
+          <p className="text-sm text-muted leading-relaxed">{company.description}</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Pipeline by Phase */}
+        {pipeline.length > 0 && (
+          <div className="rounded-lg border border-border p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Pipeline by Phase</h3>
+            <div className="space-y-2">
+              {["PHASE3", "PHASE2", "PHASE1", "PHASE4"].map((phase) => {
+                const count = phaseCount[phase] || 0;
+                if (count === 0) return null;
+                const total = pipeline.length;
+                const pct = Math.round((count / total) * 100);
+                return (
+                  <div key={phase} className="flex items-center gap-3">
+                    <span className={cn("text-[11px] font-medium w-16", PHASE_COLORS[phase] ? "text-foreground" : "text-muted")}>
+                      {PHASE_LABELS[phase] || phase}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-surface-hover overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full", phase === "PHASE3" ? "bg-orange-500" : phase === "PHASE2" ? "bg-yellow-500" : phase === "PHASE1" ? "bg-blue-500" : "bg-green-500")}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-mono text-muted w-8 text-right">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Pipeline by Therapeutic Area */}
+        {Object.keys(areaCount).length > 0 && (
+          <div className="rounded-lg border border-border p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">By Therapeutic Area</h3>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(areaCount)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 8)
+                .map(([area, count]) => (
+                  <span
+                    key={area}
+                    className={cn("px-2.5 py-1 rounded-md text-[11px] font-medium", THERAPEUTIC_AREA_COLORS[area] || THERAPEUTIC_AREA_COLORS.Other)}
+                  >
+                    {area} ({count})
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Top pipeline drugs preview */}
+      {pipeline.length > 0 && (
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Lead Programs</h3>
+          <div className="space-y-2">
+            {pipeline.slice(0, 5).map((drug) => (
+              <Link
+                key={drug.drug_id}
+                href={`/drugs/${drug.drug_id}`}
+                className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-surface-hover transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <FlaskConical className="w-4 h-4 text-accent" />
+                  <div>
+                    <p className="text-[13px] font-medium group-hover:text-accent transition-colors">{drug.drug_name}</p>
+                    <p className="text-[11px] text-muted">{drug.indication || drug.therapeutic_area || "N/A"}</p>
+                  </div>
+                </div>
+                {drug.highest_phase && (
+                  <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium border", PHASE_COLORS[drug.highest_phase] || PHASE_COLORS.PRECLINICAL)}>
+                    {PHASE_LABELS[drug.highest_phase]}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Competitors */}
+      {competitors && competitors.competitors.length > 0 && (
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-1">Competitors</h3>
+          <p className="text-[11px] text-muted mb-3">Companies with overlapping drug pipelines in {competitors.therapeutic_areas.join(", ")}</p>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="bg-surface/50 border-b border-border">
+                  <th className="text-left px-4 py-2 text-[10px] font-semibold uppercase text-muted">Company</th>
+                  <th className="text-right px-4 py-2 text-[10px] font-semibold uppercase text-muted">Price</th>
+                  <th className="text-right px-4 py-2 text-[10px] font-semibold uppercase text-muted">Market Cap</th>
+                  <th className="text-right px-4 py-2 text-[10px] font-semibold uppercase text-muted">Overlap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {competitors.competitors.slice(0, 8).map((c) => (
+                  <tr key={c.ticker} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
+                    <td className="px-4 py-2.5">
+                      <Link href={`/companies/${c.ticker}`} className="group flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-surface-hover flex items-center justify-center text-[9px] font-bold text-accent">{c.ticker.slice(0, 2)}</div>
+                        <div>
+                          <p className="font-medium text-[12px] group-hover:text-accent transition-colors">{c.ticker}</p>
+                          <p className="text-[10px] text-muted truncate max-w-[140px]">{c.name}</p>
+                        </div>
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">{c.price ? `$${c.price.toFixed(2)}` : "N/A"}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-muted">{c.market_cap ? formatMarketCap(c.market_cap) : "N/A"}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className="text-[11px] font-medium text-accent">{c.pipeline_size} drugs</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Institutional Ownership */}
+      {shortInterest && shortInterest.institutional_ownership.length > 0 && (
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Top Institutional Holders</h3>
+          <div className="space-y-2">
+            {shortInterest.institutional_ownership.slice(0, 6).map((h, i) => (
+              <div key={i} className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-b-0 text-[13px]">
+                <span className="truncate max-w-[250px]">{h.name}</span>
+                <div className="flex items-center gap-4">
+                  <span className="font-mono text-muted">{h.shares ? formatNumber(h.shares) : "N/A"} shares</span>
+                  {h.change !== 0 && (
+                    <span className={cn("text-[11px] font-medium", h.change > 0 ? "text-positive" : "text-negative")}>
+                      {h.change > 0 ? "+" : ""}{formatNumber(h.change)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Short Interest */}
+      {shortInterest && shortInterest.short_interest.length > 0 && (
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Short Interest History</h3>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            {shortInterest.short_interest.slice(-1).map((s, i) => (
+              <div key={i}>
+                <p className="text-[10px] text-muted uppercase">Latest Short Interest</p>
+                <p className="text-lg font-bold font-mono">{s.short_interest ? formatNumber(s.short_interest) : "N/A"}</p>
+                <p className="text-[11px] text-muted">{s.days_to_cover?.toFixed(1)} days to cover</p>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="bg-surface/50 border-b border-border">
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted">Date</th>
+                  <th className="text-right px-3 py-2 text-[10px] font-semibold text-muted">Short Interest</th>
+                  <th className="text-right px-3 py-2 text-[10px] font-semibold text-muted">Days to Cover</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shortInterest.short_interest.map((s, i) => (
+                  <tr key={i} className="border-b border-border last:border-b-0">
+                    <td className="px-3 py-1.5 font-mono text-muted">{s.date}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{s.short_interest ? formatNumber(s.short_interest) : "N/A"}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{s.days_to_cover?.toFixed(1) || "N/A"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DataRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between py-1 border-b border-border/50 last:border-b-0">
+      <span className="text-muted">{label}</span>
+      <span className="font-medium font-mono">{value}</span>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, sublabel, color }: { label: string; value: string; sublabel: string; color?: string }) {
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <p className="text-[10px] text-muted uppercase font-semibold">{label}</p>
+      <p className={cn("text-xl font-bold mt-1", color)}>{value}</p>
+      <p className="text-[11px] text-muted">{sublabel}</p>
+    </div>
+  );
+}
+
+/* ── Pipeline Tab ── */
+function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
+  if (pipeline.length === 0) {
+    return <EmptyState text="No pipeline data yet" />;
+  }
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-surface/50 border-b border-border">
+            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Drug</th>
+            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Phase</th>
+            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Area</th>
+            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Indication</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pipeline.map((drug) => (
+            <tr key={drug.drug_id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
+              <td className="px-4 py-3">
+                <Link href={`/drugs/${drug.drug_id}`} className="font-medium text-[13px] text-accent hover:underline">
+                  {drug.drug_name}
+                </Link>
+              </td>
+              <td className="px-4 py-3">
+                {drug.highest_phase && (
+                  <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium border", PHASE_COLORS[drug.highest_phase] || PHASE_COLORS.PRECLINICAL)}>
+                    {PHASE_LABELS[drug.highest_phase] || drug.highest_phase}
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-3">
+                {drug.therapeutic_area && (
+                  <span className={cn("px-2 py-0.5 rounded text-[11px]", THERAPEUTIC_AREA_COLORS[drug.therapeutic_area] || THERAPEUTIC_AREA_COLORS.Other)}>
+                    {drug.therapeutic_area}
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-3 text-[13px] text-muted max-w-[250px] truncate">{drug.indication || "N/A"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ── Trials Tab ── */
+function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
+  if (trials.length === 0) {
+    return <EmptyState text="No clinical trials found" />;
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-muted mb-3">{total} trials found</p>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-surface/50 border-b border-border">
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">NCT ID</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Title</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Phase</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Status</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Dates</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Results</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trials.map((t) => {
+              const isCompleted = t.overall_status === "COMPLETED" || t.overall_status === "TERMINATED";
+              const hasResults = !!t.results_first_posted;
+
+              return (
+                <tr key={t.nct_id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
+                  <td className="px-4 py-3">
+                    <Link href={`/trials/${t.nct_id}`}
+                      className="text-accent hover:underline text-[12px] font-mono">
+                      {t.nct_id}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Link href={`/trials/${t.nct_id}`} className="text-[12px] hover:text-accent transition-colors max-w-[280px] truncate block">
+                      {t.title}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    {t.phase && (
+                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium border", PHASE_COLORS[t.phase] || PHASE_COLORS.PRECLINICAL)}>
+                        {PHASE_LABELS[t.phase] || t.phase}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={cn("text-[11px] font-medium", STATUS_COLORS[t.overall_status || ""] || "text-muted")}>
+                      {STATUS_LABELS[t.overall_status || ""] || t.overall_status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-[11px] font-mono text-muted">
+                      {t.start_date && <span>{t.start_date}</span>}
+                      {t.primary_completion_date && <span className="text-foreground"> → {t.primary_completion_date}</span>}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {hasResults ? (
+                      <a
+                        href={`https://clinicaltrials.gov/study/${t.nct_id}?tab=results`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-positive/10 text-positive hover:bg-positive/20 transition-colors"
+                      >
+                        View Results
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    ) : isCompleted ? (
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-warning/10 text-warning">
+                        Pending
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── Options Tab ── */
+function OptionsTab({
+  expirations,
+  selectedExpiration,
+  onSelectExpiration,
+  chain,
+}: {
+  expirations: string[];
+  selectedExpiration: string | null;
+  onSelectExpiration: (exp: string) => void;
+  chain: { calls: OptionRow[]; puts: OptionRow[] } | undefined;
+}) {
+  if (expirations.length === 0) {
+    return <EmptyState text="No options data available for this ticker" />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Expiration selector */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-muted">Expiration:</span>
+        {expirations.slice(0, 8).map((exp) => (
+          <button
+            key={exp}
+            onClick={() => onSelectExpiration(exp)}
+            className={cn(
+              "px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors",
+              selectedExpiration === exp ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground hover:bg-surface-hover"
+            )}
+          >
+            {exp}
+          </button>
+        ))}
+      </div>
+
+      {chain && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Calls */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-positive mb-2">Calls</h3>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="bg-surface/50 border-b border-border">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-muted">Strike</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Bid</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Ask</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Vol</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">OI</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">IV</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chain.calls.slice(0, 20).map((c, i) => (
+                    <tr key={i} className={cn("border-b border-border last:border-b-0", c.in_the_money && "bg-positive/5")}>
+                      <td className="px-3 py-1.5 font-mono font-medium">${c.strike}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{c.bid.toFixed(2)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{c.ask.toFixed(2)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-muted">{c.volume}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-muted">{c.open_interest}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-accent">{c.iv}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Puts */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-negative mb-2">Puts</h3>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="bg-surface/50 border-b border-border">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-muted">Strike</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Bid</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Ask</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Vol</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">OI</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">IV</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chain.puts.slice(0, 20).map((p, i) => (
+                    <tr key={i} className={cn("border-b border-border last:border-b-0", p.in_the_money && "bg-negative/5")}>
+                      <td className="px-3 py-1.5 font-mono font-medium">${p.strike}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{p.bid.toFixed(2)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{p.ask.toFixed(2)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-muted">{p.volume}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-muted">{p.open_interest}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-accent">{p.iv}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Filings Tab ── */
+function FilingsTab({ filings, trades }: { filings: Filing[]; trades: InsiderTrade[] }) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* SEC Filings */}
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">SEC Filings</h3>
+        {filings.length > 0 ? (
+          <div className="rounded-lg border border-border overflow-hidden">
+            {filings.map((f, i) => (
+              <a
+                key={f.id}
+                href={f.edgar_url || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn("flex items-center justify-between px-4 py-2.5 hover:bg-surface-hover transition-colors",
+                  i < filings.length - 1 && "border-b border-border")}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold bg-surface-hover px-2 py-0.5 rounded min-w-[40px] text-center font-mono">{f.filing_type}</span>
+                  <div>
+                    <p className="text-[12px]">{f.description || f.filing_type}</p>
+                    <p className="text-[11px] text-muted">{f.filed_date}</p>
+                  </div>
+                </div>
+                <ExternalLink className="w-3 h-3 text-muted" />
+              </a>
+            ))}
+          </div>
+        ) : (
+          <EmptyState text="No filings yet" />
+        )}
+      </div>
+
+      {/* Insider Trades */}
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Insider Trades</h3>
+        {trades.length > 0 ? (
+          <div className="rounded-lg border border-border overflow-hidden">
+            {trades.map((t, i) => (
+              <div key={t.id} className={cn("flex items-center justify-between px-4 py-2.5 hover:bg-surface-hover transition-colors",
+                i < trades.length - 1 && "border-b border-border")}>
+                <div className="flex items-center gap-3">
+                  <div className={cn("w-6 h-6 rounded-full flex items-center justify-center",
+                    t.trade_type === "PURCHASE" ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative")}>
+                    {t.trade_type === "PURCHASE" ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-medium">{t.insider_name}</p>
+                    <p className="text-[11px] text-muted">{t.insider_title} · {t.transaction_date}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className={cn("text-[12px] font-mono font-medium",
+                    t.trade_type === "PURCHASE" ? "text-positive" : "text-negative")}>
+                    {t.trade_type === "PURCHASE" ? "+" : "-"}{formatNumber(Math.round(t.shares))}
+                  </p>
+                  {t.total_value && <p className="text-[11px] text-muted font-mono">${t.total_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState text="No insider trades found" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Helpers ── */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] text-muted uppercase font-semibold">{label}</p>
+      <p className="font-semibold mt-0.5">{value}</p>
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-border border-dashed p-12 text-center">
+      <p className="text-sm text-muted">{text}</p>
+    </div>
+  );
+}
