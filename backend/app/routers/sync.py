@@ -188,6 +188,83 @@ async def trigger_company_info_sync(
     return {"status": "started", "message": "Company info sync started in background."}
 
 
+@router.post("/full")
+async def trigger_full_sync(background_tasks: BackgroundTasks):
+    """Run all syncs in sequence to fully populate the database."""
+    if "FULL_SYNC" in _running_syncs:
+        return {"status": "already_running"}
+
+    async def _full_sync():
+        """Run all syncs in the correct order."""
+        _running_syncs.add("FULL_SYNC")
+        try:
+            logger.info("Full sync: starting company sync...")
+            async with async_session() as db:
+                await sync_companies(db)
+            logger.info("Full sync: companies done")
+
+            logger.info("Full sync: enriching SIC codes...")
+            async with async_session() as db:
+                await enrich_companies_with_sic(db)
+            logger.info("Full sync: SIC done")
+
+            logger.info("Full sync: company info from EDGAR...")
+            async with async_session() as db:
+                await sync_company_info_from_edgar(db)
+            logger.info("Full sync: company info done")
+
+            logger.info("Full sync: generating descriptions...")
+            async with async_session() as db:
+                await generate_descriptions(db)
+            logger.info("Full sync: descriptions done")
+
+            logger.info("Full sync: bulk trial download...")
+            async with async_session() as db:
+                await bulk_download_trials(db)
+            logger.info("Full sync: bulk trials done")
+
+            logger.info("Full sync: sponsor matching...")
+            async with async_session() as db:
+                await match_sponsors(db)
+            logger.info("Full sync: sponsor matching done")
+
+            logger.info("Full sync: extracting catalysts...")
+            async with async_session() as db:
+                await extract_catalysts(db)
+            logger.info("Full sync: catalysts done")
+
+            logger.info("Full sync: syncing filings...")
+            async with async_session() as db:
+                await sync_filings(db)
+            logger.info("Full sync: filings done")
+
+            logger.info("Full sync: SEC financials...")
+            async with async_session() as db:
+                await sync_sec_financials(db)
+            logger.info("Full sync: SEC financials done")
+
+            logger.info("Full sync: Finnhub prices...")
+            async with async_session() as db:
+                await sync_prices_finnhub(db)
+            logger.info("Full sync: prices done")
+
+            logger.info("Full sync: FDA approvals...")
+            async with async_session() as db:
+                await sync_fda_approvals(db)
+            logger.info("Full sync: ALL COMPLETE")
+
+        except Exception as e:
+            logger.error(f"Full sync failed: {e}")
+        finally:
+            _running_syncs.discard("FULL_SYNC")
+
+    background_tasks.add_task(_full_sync)
+    return {
+        "status": "started",
+        "message": "Full database sync started. This will take 30-60 minutes. Check /api/sync/status for progress.",
+    }
+
+
 @router.get("/status")
 async def get_sync_status(db: AsyncSession = Depends(get_db)):
     """Get the last sync status for each sync type."""

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
 from app.config import FRONTEND_URL
-from app.routers import companies, drugs, catalysts, filings, analyzer, options, trial_detail, competitors, edge, sync
+from app.routers import companies, drugs, catalysts, filings, analyzer, options, trial_detail, competitors, edge, sync, pdufa
 
 logging.basicConfig(
     level=logging.INFO,
@@ -104,6 +104,7 @@ app.include_router(trial_detail.router)
 app.include_router(competitors.router)
 app.include_router(edge.router)
 app.include_router(sync.router)
+app.include_router(pdufa.router)
 
 
 @app.get("/api/health")

@@ -13,6 +13,8 @@ import {
   Activity,
   LogIn,
   LogOut,
+  Pill,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, useAuth } from "@/lib/providers";
@@ -21,6 +23,8 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/companies", label: "Screener", icon: Search },
   { href: "/catalysts", label: "Catalysts", icon: Calendar },
+  { href: "/pdufa", label: "PDUFA Calendar", icon: Pill },
+  { href: "/conferences", label: "Conferences", icon: Users },
   { href: "/watchlist", label: "Watchlist", icon: Star },
 ];
 

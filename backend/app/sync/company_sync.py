@@ -11,7 +11,7 @@ from datetime import datetime
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
+from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from sqlalchemy import select
 
 from app.models.company import Company, SponsorAlias
@@ -87,7 +87,7 @@ async def sync_companies(db: AsyncSession) -> int:
                     continue
 
                 # Upsert company
-                stmt = sqlite_upsert(Company).values(
+                stmt = pg_upsert(Company).values(
                     ticker=ticker,
                     name=name,
                     cik=cik,
@@ -106,7 +106,7 @@ async def sync_companies(db: AsyncSession) -> int:
                 await db.execute(stmt)
 
                 # Also create a primary sponsor alias
-                alias_stmt = sqlite_upsert(SponsorAlias).values(
+                alias_stmt = pg_upsert(SponsorAlias).values(
                     ticker=ticker,
                     alias_name=name,
                     is_primary=True,

@@ -12,7 +12,7 @@ from datetime import datetime, date
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
+from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from rapidfuzz import fuzz, process
 
 from app.models.company import Company, SponsorAlias
@@ -130,7 +130,7 @@ async def sync_fda_approvals(db: AsyncSession) -> int:
 
                                     is_past = approval_date < date.today()
 
-                                    stmt = sqlite_upsert(Catalyst).values(
+                                    stmt = pg_upsert(Catalyst).values(
                                         company_ticker=ticker,
                                         drug_name=drug_display,
                                         event_type="FDA_APPROVAL",

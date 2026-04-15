@@ -10,7 +10,7 @@ from datetime import datetime, date, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
+from sqlalchemy.dialects.postgresql import insert as pg_upsert
 
 from app.models.trial import Trial
 from app.models.catalyst import Catalyst
@@ -138,7 +138,7 @@ async def extract_catalysts(db: AsyncSession) -> int:
             description = f"{phase_label} data readout{indication_str}"
 
             # Upsert catalyst
-            stmt = sqlite_upsert(Catalyst).values(
+            stmt = pg_upsert(Catalyst).values(
                 company_ticker=trial.company_ticker,
                 drug_id=trial.drug_id,
                 drug_name=drug_name,
@@ -197,7 +197,7 @@ async def extract_catalysts(db: AsyncSession) -> int:
             # Use completion_date + 3 months as estimated results date
             estimated_results = trial.completion_date + timedelta(days=90)
 
-            stmt = sqlite_upsert(Catalyst).values(
+            stmt = pg_upsert(Catalyst).values(
                 company_ticker=trial.company_ticker,
                 drug_id=trial.drug_id,
                 drug_name=drug_name,

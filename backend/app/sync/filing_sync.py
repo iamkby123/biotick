@@ -14,7 +14,7 @@ import httpx
 from lxml import etree
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
+from sqlalchemy.dialects.postgresql import insert as pg_upsert
 
 from app.models.company import Company
 from app.models.filing import SECFiling, InsiderTrade
@@ -95,7 +95,7 @@ async def sync_filings(db: AsyncSession) -> int:
                         edgar_url = f"https://www.sec.gov/Archives/edgar/data/{int(company.cik)}/{acc_formatted}/{primary_doc}" if primary_doc else None
 
                         # Upsert filing
-                        stmt = sqlite_upsert(SECFiling).values(
+                        stmt = pg_upsert(SECFiling).values(
                             ticker=company.ticker,
                             cik=company.cik,
                             accession_number=accession,
@@ -233,7 +233,7 @@ async def _parse_form4(
 
             total_value = shares * price if price else None
 
-            stmt = sqlite_upsert(InsiderTrade).values(
+            stmt = pg_upsert(InsiderTrade).values(
                 ticker=company.ticker,
                 accession_number=accession,
                 insider_name=insider_name,
@@ -248,7 +248,9 @@ async def _parse_form4(
                 is_direct=(ownership_nature == "D"),
             )
             # Use on_conflict_do_nothing since unique constraint covers dedup
-            stmt = stmt.on_conflict_do_nothing()
+            stmt = stmt.on_conflict_do_nothing(
+                constraint="uq_insider_trade"
+            )
             await db.execute(stmt)
             count += 1
 

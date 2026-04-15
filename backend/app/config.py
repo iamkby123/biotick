@@ -8,10 +8,15 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "biotech.db"
 
-# Database
-DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
+# Database — Supabase PostgreSQL
+# Expects DATABASE_URL like: postgresql+asyncpg://user:pass@host:port/dbname
+_raw_url = os.environ.get("DATABASE_URL", "")
+if _raw_url.startswith("postgres://"):
+    _raw_url = _raw_url.replace("postgres://", "postgresql://", 1)
+if _raw_url and "+asyncpg" not in _raw_url:
+    _raw_url = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+DATABASE_URL = _raw_url
 
 # SEC EDGAR
 SEC_USER_AGENT = "BiotechPlatform kbysnkr6@gmail.com"

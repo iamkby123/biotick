@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests as req_lib
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
+from sqlalchemy.dialects.postgresql import insert as pg_upsert
 
 from app.models.company import Company, SponsorAlias
 from app.models.trial import Trial
@@ -233,7 +233,7 @@ async def sync_trials_for_company(
                         drug_id = drug_slug
 
                     # Upsert trial
-                    stmt = sqlite_upsert(Trial).values(
+                    stmt = pg_upsert(Trial).values(
                         nct_id=nct_id,
                         drug_id=drug_id,
                         company_ticker=ticker,
@@ -307,7 +307,7 @@ async def sync_trials_for_company(
 
                         lead_sponsor = sponsor_module.get("leadSponsor", {}).get("name", sponsor_name)
 
-                        stmt = sqlite_upsert(Trial).values(
+                        stmt = pg_upsert(Trial).values(
                             nct_id=nct_id,
                             company_ticker=ticker,
                             sponsor_name=lead_sponsor,

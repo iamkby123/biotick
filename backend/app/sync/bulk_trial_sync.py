@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests as req_lib
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
+from sqlalchemy.dialects.postgresql import insert as pg_upsert
 
 from app.models.trial import Trial
 from app.models.sync_log import SyncLog
@@ -131,7 +131,7 @@ async def bulk_download_trials(db: AsyncSession) -> int:
 
                     # Upsert trial — do NOT set company_ticker or drug_id
                     # Those get linked by sponsor_matcher afterward
-                    stmt = sqlite_upsert(Trial).values(
+                    stmt = pg_upsert(Trial).values(
                         nct_id=nct_id,
                         sponsor_name=lead_sponsor,
                         title=id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown"),

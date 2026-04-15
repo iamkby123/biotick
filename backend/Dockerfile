@@ -9,8 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app code
 COPY backend/app/ ./app/
 
-# Copy database (pre-populated)
-COPY backend/data/ ./data/
+# Create data directory (for cache/temp files)
+RUN mkdir -p /app/data
 
 # Expose port
 EXPOSE 8000

@@ -9,17 +9,21 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def init_db():
-    """Create all tables and ensure data directory exists."""
+    """Verify database connection (tables managed by Supabase migrations)."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     async with engine.begin() as conn:
-        # Enable WAL mode for concurrent reads during writes
-        await conn.execute(text("PRAGMA journal_mode=WAL"))
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("SELECT 1"))
 
 
 async def get_db():
