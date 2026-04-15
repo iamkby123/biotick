@@ -305,7 +305,9 @@ function TradingViewChart({ ticker }: { ticker: string }) {
       save_image: false,
       calendar: false,
       hide_volume: false,
-      support_host: "https://www.tradingview.com",
+      enable_publishing: false,
+      withdateranges: false,
+      isTransparent: true,
     });
 
     const container = document.getElementById(containerId);
