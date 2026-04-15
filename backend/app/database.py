@@ -1,4 +1,5 @@
 import logging
+import ssl
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import text
@@ -18,14 +19,21 @@ if "@" in _safe_url:
     _safe_url = _safe_url.split("@")[0].rsplit(":", 1)[0] + ":***@" + _safe_url.split("@")[1]
 logger.info(f"Database URL: {_safe_url}")
 
+# SSL context for Supabase (required for pooler connections)
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,
-    # Supabase transaction pooler doesn't support prepared statements
-    connect_args={"statement_cache_size": 0},
+    connect_args={
+        "statement_cache_size": 0,
+        "ssl": _ssl_ctx,
+    },
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
