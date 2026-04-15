@@ -3,17 +3,16 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install dependencies
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
-COPY app/ ./app/
+COPY backend/app/ ./app/
 
 # Copy database (pre-populated)
-COPY data/ ./data/
+COPY backend/data/ ./data/
 
 # Expose port
 EXPOSE 8000
 
-# Run
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
