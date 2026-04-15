@@ -9,16 +9,15 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 
-# Database — Supabase PostgreSQL (using psycopg v3 async driver)
-# Build URL programmatically to avoid password encoding issues
+# Database — Supabase PostgreSQL (direct connection, requires IPv6)
 from sqlalchemy import URL as _SAURL
 _db_password = os.environ.get("SUPABASE_DB_PASSWORD", "")
 DATABASE_URL = _SAURL.create(
     drivername="postgresql+psycopg",
-    username="postgres.bfhmaswnkzoowfxrsfce",
+    username="postgres",
     password=_db_password,
-    host="aws-0-us-east-1.pooler.supabase.com",
-    port=6543,
+    host="db.bfhmaswnkzoowfxrsfce.supabase.co",
+    port=5432,
     database="postgres",
 )
 
