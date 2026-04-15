@@ -9,18 +9,13 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 
-# Database — Supabase PostgreSQL
-# Accepts any of:
-#   postgres://...  postgresql://...  postgresql+asyncpg://...
+# Database — Supabase PostgreSQL (using psycopg v3 async driver)
 _raw_url = os.environ.get("DATABASE_URL", "")
-# Normalize scheme to postgresql+asyncpg
+# Normalize scheme to postgresql+psycopg
 if _raw_url.startswith("postgres://"):
-    _raw_url = "postgresql+asyncpg://" + _raw_url[len("postgres://"):]
-elif _raw_url.startswith("postgresql://") and "+asyncpg" not in _raw_url:
-    _raw_url = "postgresql+asyncpg://" + _raw_url[len("postgresql://"):]
-# Strip sslmode query param (asyncpg uses ssl= connect_arg instead)
-if "?" in _raw_url:
-    _raw_url = _raw_url.split("?")[0]
+    _raw_url = "postgresql+psycopg://" + _raw_url[len("postgres://"):]
+elif _raw_url.startswith("postgresql://") and "+" not in _raw_url.split("://")[0]:
+    _raw_url = "postgresql+psycopg://" + _raw_url[len("postgresql://"):]
 DATABASE_URL = _raw_url
 
 # SEC EDGAR
