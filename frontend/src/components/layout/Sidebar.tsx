@@ -11,9 +11,11 @@ import {
   Sun,
   Moon,
   Activity,
+  LogIn,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/lib/providers";
+import { useTheme, useAuth } from "@/lib/providers";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -25,6 +27,7 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
+  const { user, signOut } = useAuth();
 
   return (
     <aside className="w-[220px] bg-surface/50 backdrop-blur-sm border-r border-border flex flex-col shrink-0 h-screen sticky top-0">
@@ -68,7 +71,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom */}
-      <div className="px-3 py-3 border-t border-border">
+      <div className="px-3 py-3 border-t border-border space-y-1">
         <button
           onClick={toggleTheme}
           className="flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-muted hover:text-foreground hover:bg-surface-hover w-full transition-all duration-100"
@@ -76,6 +79,23 @@ export default function Sidebar() {
           {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           {theme === "dark" ? "Light mode" : "Dark mode"}
         </button>
+        {user ? (
+          <button
+            onClick={signOut}
+            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-muted hover:text-foreground hover:bg-surface-hover w-full transition-all duration-100"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
+        ) : (
+          <Link
+            href="/login"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-accent hover:bg-accent/10 w-full transition-all duration-100"
+          >
+            <LogIn className="w-4 h-4" />
+            Sign In
+          </Link>
+        )}
       </div>
     </aside>
   );
