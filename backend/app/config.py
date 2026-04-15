@@ -10,13 +10,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 
 # Database — Supabase PostgreSQL (using psycopg v3 async driver)
-_raw_url = os.environ.get("DATABASE_URL", "")
-# Normalize scheme to postgresql+psycopg
-if _raw_url.startswith("postgres://"):
-    _raw_url = "postgresql+psycopg://" + _raw_url[len("postgres://"):]
-elif _raw_url.startswith("postgresql://") and "+" not in _raw_url.split("://")[0]:
-    _raw_url = "postgresql+psycopg://" + _raw_url[len("postgresql://"):]
-DATABASE_URL = _raw_url
+# Build URL programmatically to avoid password encoding issues
+from sqlalchemy import URL as _SAURL
+_db_password = os.environ.get("SUPABASE_DB_PASSWORD", "")
+DATABASE_URL = _SAURL.create(
+    drivername="postgresql+psycopg",
+    username="postgres.bfhmaswnkzoowfxrsfce",
+    password=_db_password,
+    host="aws-0-us-east-1.pooler.supabase.com",
+    port=6543,
+    database="postgres",
+)
 
 # SEC EDGAR
 SEC_USER_AGENT = "BiotechPlatform kbysnkr6@gmail.com"
