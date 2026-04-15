@@ -284,8 +284,14 @@ export default function CompanyDetailPage({
 /* ── TradingView Chart ── */
 function TradingViewChart({ ticker }: { ticker: string }) {
   const containerId = `tv-chart-${ticker}`;
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.async = true;
@@ -325,7 +331,15 @@ function TradingViewChart({ ticker }: { ticker: string }) {
       const container = document.getElementById(containerId);
       if (container) container.innerHTML = "";
     };
-  }, [ticker, containerId]);
+  }, [ticker, containerId, mounted]);
+
+  if (!mounted) {
+    return (
+      <div className="rounded-lg border border-border bg-surface/50 flex items-center justify-center" style={{ height: "500px" }}>
+        <p className="text-sm text-muted">Loading chart...</p>
+      </div>
+    );
+  }
 
   return (
     <div
