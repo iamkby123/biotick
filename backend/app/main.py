@@ -109,4 +109,30 @@ app.include_router(pdufa.router)
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "service": "biotech-platform"}
+    import os
+    from app.config import DATABASE_URL
+    # Show connection info (hide password)
+    url_str = str(DATABASE_URL)
+    safe_url = url_str
+    if "@" in safe_url:
+        safe_url = safe_url.split("@")[0].rsplit(":", 1)[0] + ":***@" + safe_url.split("@")[1]
+
+    db_ok = False
+    db_error = None
+    try:
+        from app.database import engine
+        from sqlalchemy import text
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)[:500]
+
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "service": "biotech-platform",
+        "db_connected": db_ok,
+        "db_error": db_error,
+        "db_url": safe_url,
+        "env_password_set": bool(os.environ.get("SUPABASE_DB_PASSWORD")),
+    }

@@ -39,8 +39,8 @@ async def init_db():
             await conn.execute(text("SELECT 1"))
         logger.info("Database connection verified")
     except Exception as e:
-        logger.error(f"Database connection failed: {e}")
-        raise
+        # Don't crash the app — let it start so we can diagnose via /api/health
+        logger.error(f"Database connection failed (app will start anyway): {e}")
 
 
 async def get_db():
