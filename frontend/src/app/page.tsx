@@ -59,13 +59,13 @@ function Navbar() {
 
         <div className="flex items-center gap-3">
           <Link
-            href="/dashboard"
+            href="/login"
             className="text-sm text-muted hover:text-foreground transition hidden sm:block"
           >
-            Sign In
+            Log In
           </Link>
           <Link
-            href="/dashboard"
+            href="/signup"
             className="px-4 py-2 rounded-md bg-accent text-black text-sm font-semibold hover:bg-accent-hover transition"
           >
             Get Started
