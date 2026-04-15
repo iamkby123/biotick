@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const STRIPE_PRO_URL = "https://buy.stripe.com/fZu5kDdChcdg9uabJO73G01";
+const STRIPE_PRO_URL = "https://buy.stripe.com/4gM14n9m1914cGm5lq73G02";
 
 export default function LandingPage() {
   return (
@@ -264,7 +264,7 @@ function Pricing() {
     },
     {
       name: "Pro",
-      price: "$39",
+      price: "$19.99",
       period: "/month",
       description: "Full access to all biotech data",
       cta: "Upgrade to Pro",
