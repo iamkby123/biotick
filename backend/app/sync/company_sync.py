@@ -12,7 +12,7 @@ from datetime import datetime
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.models.company import Company, SponsorAlias
 from app.models.sync_log import SyncLog
@@ -195,16 +195,41 @@ async def enrich_companies_with_sic(db: AsyncSession) -> int:
 
         await db.commit()
 
-        # Do NOT delete non-biotech companies — filter at query time instead
-        # This preserves all company data for potential future use
+        # Delete non-biotech companies to keep DB lean (~1K biotech only)
+        delete_result = await db.execute(
+            select(Company).where(
+                Company.sic_code.isnot(None),
+                Company.sic_code.notin_(BIOTECH_SIC_CODES),
+            )
+        )
+        non_biotech = delete_result.scalars().all()
+        deleted = 0
+        for company in non_biotech:
+            await db.delete(company)
+            deleted += 1
+        await db.commit()
+        logger.info(f"Removed {deleted} non-biotech companies")
 
+        # Also delete companies that still have no SIC (couldn't be looked up)
+        no_sic_result = await db.execute(
+            select(Company).where(Company.sic_code.is_(None))
+        )
+        no_sic = no_sic_result.scalars().all()
+        deleted_no_sic = 0
+        for company in no_sic:
+            await db.delete(company)
+            deleted_no_sic += 1
+        await db.commit()
+        logger.info(f"Removed {deleted_no_sic} companies with no SIC data")
+
+        remaining = (await db.execute(select(func.count()).select_from(Company))).scalar()
         log.completed_at = datetime.utcnow()
         log.status = "COMPLETED"
-        log.records_processed = count
+        log.records_processed = remaining
         await db.commit()
 
-        logger.info(f"SIC enrichment complete: {count}/{total} companies enriched")
-        return count
+        logger.info(f"SIC enrichment complete: {remaining} biotech companies retained")
+        return remaining
 
     except Exception as e:
         log.completed_at = datetime.utcnow()
