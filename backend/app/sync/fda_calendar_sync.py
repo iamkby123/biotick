@@ -130,25 +130,26 @@ async def sync_fda_approvals(db: AsyncSession) -> int:
 
                                     is_past = approval_date < date.today()
 
-                                    stmt = pg_upsert(Catalyst).values(
-                                        company_ticker=ticker,
-                                        drug_name=drug_display,
-                                        event_type="FDA_APPROVAL",
-                                        event_description=description,
-                                        expected_date=approval_date,
-                                        date_precision="EXACT",
-                                        significance_score=10,
-                                        confidence="HIGH",
-                                        source="OpenFDA",
-                                        source_url=f"https://www.accessdata.fda.gov/scripts/cder/daf/",
-                                        is_past=is_past,
-                                        outcome="POSITIVE" if is_past else "PENDING",
-                                        updated_at=datetime.utcnow(),
-                                    )
-                                    stmt = stmt.on_conflict_do_nothing(
-                                        index_elements=["company_ticker", "drug_name", "event_type", "expected_date"],
-                                    )
-                                    await db.execute(stmt)
+                                    async with db.begin_nested():
+                                        stmt = pg_upsert(Catalyst).values(
+                                            company_ticker=ticker,
+                                            drug_name=drug_display,
+                                            event_type="FDA_APPROVAL",
+                                            event_description=description,
+                                            expected_date=approval_date,
+                                            date_precision="EXACT",
+                                            significance_score=10,
+                                            confidence="HIGH",
+                                            source="OpenFDA",
+                                            source_url=f"https://www.accessdata.fda.gov/scripts/cder/daf/",
+                                            is_past=is_past,
+                                            outcome="POSITIVE" if is_past else "PENDING",
+                                            updated_at=datetime.utcnow(),
+                                        )
+                                        stmt = stmt.on_conflict_do_nothing(
+                                            index_elements=["company_ticker", "drug_name", "event_type", "expected_date"],
+                                        )
+                                        await db.execute(stmt)
                                     count += 1
 
                         except Exception as e:

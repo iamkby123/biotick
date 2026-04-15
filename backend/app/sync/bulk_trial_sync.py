@@ -131,37 +131,38 @@ async def bulk_download_trials(db: AsyncSession) -> int:
 
                     # Upsert trial — do NOT set company_ticker or drug_id
                     # Those get linked by sponsor_matcher afterward
-                    stmt = pg_upsert(Trial).values(
-                        nct_id=nct_id,
-                        sponsor_name=lead_sponsor,
-                        title=id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown"),
-                        brief_summary=(desc_module.get("briefSummary", "") or "")[:5000],
-                        phase=phase,
-                        overall_status=status_module.get("overallStatus"),
-                        therapeutic_area=therapeutic_area,
-                        indication=indication,
-                        enrollment=enrollment,
-                        start_date=start_date,
-                        primary_completion_date=primary_completion,
-                        completion_date=completion,
-                        study_type=design_module.get("studyType"),
-                        results_first_posted=results_posted,
-                        last_update_posted=last_update,
-                        updated_at=datetime.utcnow(),
-                    )
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=["nct_id"],
-                        set_={
-                            "phase": stmt.excluded.phase,
-                            "overall_status": stmt.excluded.overall_status,
-                            "enrollment": stmt.excluded.enrollment,
-                            "primary_completion_date": stmt.excluded.primary_completion_date,
-                            "completion_date": stmt.excluded.completion_date,
-                            "therapeutic_area": stmt.excluded.therapeutic_area,
-                            "updated_at": stmt.excluded.updated_at,
-                        },
-                    )
-                    await db.execute(stmt)
+                    async with db.begin_nested():
+                        stmt = pg_upsert(Trial).values(
+                            nct_id=nct_id,
+                            sponsor_name=lead_sponsor,
+                            title=id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown"),
+                            brief_summary=(desc_module.get("briefSummary", "") or "")[:5000],
+                            phase=phase,
+                            overall_status=status_module.get("overallStatus"),
+                            therapeutic_area=therapeutic_area,
+                            indication=indication,
+                            enrollment=enrollment,
+                            start_date=start_date,
+                            primary_completion_date=primary_completion,
+                            completion_date=completion,
+                            study_type=design_module.get("studyType"),
+                            results_first_posted=results_posted,
+                            last_update_posted=last_update,
+                            updated_at=datetime.utcnow(),
+                        )
+                        stmt = stmt.on_conflict_do_update(
+                            index_elements=["nct_id"],
+                            set_={
+                                "phase": stmt.excluded.phase,
+                                "overall_status": stmt.excluded.overall_status,
+                                "enrollment": stmt.excluded.enrollment,
+                                "primary_completion_date": stmt.excluded.primary_completion_date,
+                                "completion_date": stmt.excluded.completion_date,
+                                "therapeutic_area": stmt.excluded.therapeutic_area,
+                                "updated_at": stmt.excluded.updated_at,
+                            },
+                        )
+                        await db.execute(stmt)
                     page_count += 1
 
                 except Exception as e:

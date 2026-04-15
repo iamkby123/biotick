@@ -1,6 +1,5 @@
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import text
 
@@ -22,11 +21,9 @@ logger.info(f"Database URL: {_safe_url}")
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    # NullPool required for Supabase transaction-mode pooler (port 6543)
-    poolclass=NullPool,
-    connect_args={
-        "prepare_threshold": 0,  # disable prepared statements for transaction pooler
-    },
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -138,32 +138,33 @@ async def extract_catalysts(db: AsyncSession) -> int:
             description = f"{phase_label} data readout{indication_str}"
 
             # Upsert catalyst
-            stmt = pg_upsert(Catalyst).values(
-                company_ticker=trial.company_ticker,
-                drug_id=trial.drug_id,
-                drug_name=drug_name,
-                event_type="DATA_READOUT",
-                event_description=description,
-                expected_date=trial.primary_completion_date,
-                date_precision=date_precision,
-                significance_score=significance,
-                confidence=confidence,
-                source="ClinicalTrials.gov",
-                source_url=f"https://clinicaltrials.gov/study/{trial.nct_id}",
-                is_past=is_past,
-                outcome="PENDING" if not is_past else None,
-                updated_at=datetime.utcnow(),
-            )
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["company_ticker", "drug_name", "event_type", "expected_date"],
-                set_={
-                    "significance_score": stmt.excluded.significance_score,
-                    "confidence": stmt.excluded.confidence,
-                    "is_past": stmt.excluded.is_past,
-                    "updated_at": stmt.excluded.updated_at,
-                },
-            )
-            await db.execute(stmt)
+            async with db.begin_nested():
+                stmt = pg_upsert(Catalyst).values(
+                    company_ticker=trial.company_ticker,
+                    drug_id=trial.drug_id,
+                    drug_name=drug_name,
+                    event_type="DATA_READOUT",
+                    event_description=description,
+                    expected_date=trial.primary_completion_date,
+                    date_precision=date_precision,
+                    significance_score=significance,
+                    confidence=confidence,
+                    source="ClinicalTrials.gov",
+                    source_url=f"https://clinicaltrials.gov/study/{trial.nct_id}",
+                    is_past=is_past,
+                    outcome="PENDING" if not is_past else None,
+                    updated_at=datetime.utcnow(),
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["company_ticker", "drug_name", "event_type", "expected_date"],
+                    set_={
+                        "significance_score": stmt.excluded.significance_score,
+                        "confidence": stmt.excluded.confidence,
+                        "is_past": stmt.excluded.is_past,
+                        "updated_at": stmt.excluded.updated_at,
+                    },
+                )
+                await db.execute(stmt)
             count += 1
 
         # 2. Recently completed trials without results → possible imminent DATA_READOUT
@@ -197,30 +198,31 @@ async def extract_catalysts(db: AsyncSession) -> int:
             # Use completion_date + 3 months as estimated results date
             estimated_results = trial.completion_date + timedelta(days=90)
 
-            stmt = pg_upsert(Catalyst).values(
-                company_ticker=trial.company_ticker,
-                drug_id=trial.drug_id,
-                drug_name=drug_name,
-                event_type="DATA_READOUT",
-                event_description=description,
-                expected_date=estimated_results,
-                date_precision="QUARTER",
-                significance_score=significance,
-                confidence="MEDIUM",
-                source="ClinicalTrials.gov (estimated)",
-                source_url=f"https://clinicaltrials.gov/study/{trial.nct_id}",
-                is_past=estimated_results < today,
-                outcome="PENDING",
-                updated_at=datetime.utcnow(),
-            )
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["company_ticker", "drug_name", "event_type", "expected_date"],
-                set_={
-                    "significance_score": stmt.excluded.significance_score,
-                    "updated_at": stmt.excluded.updated_at,
-                },
-            )
-            await db.execute(stmt)
+            async with db.begin_nested():
+                stmt = pg_upsert(Catalyst).values(
+                    company_ticker=trial.company_ticker,
+                    drug_id=trial.drug_id,
+                    drug_name=drug_name,
+                    event_type="DATA_READOUT",
+                    event_description=description,
+                    expected_date=estimated_results,
+                    date_precision="QUARTER",
+                    significance_score=significance,
+                    confidence="MEDIUM",
+                    source="ClinicalTrials.gov (estimated)",
+                    source_url=f"https://clinicaltrials.gov/study/{trial.nct_id}",
+                    is_past=estimated_results < today,
+                    outcome="PENDING",
+                    updated_at=datetime.utcnow(),
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["company_ticker", "drug_name", "event_type", "expected_date"],
+                    set_={
+                        "significance_score": stmt.excluded.significance_score,
+                        "updated_at": stmt.excluded.updated_at,
+                    },
+                )
+                await db.execute(stmt)
             count += 1
 
         await db.commit()

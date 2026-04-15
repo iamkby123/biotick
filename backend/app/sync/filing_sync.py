@@ -95,17 +95,18 @@ async def sync_filings(db: AsyncSession) -> int:
                         edgar_url = f"https://www.sec.gov/Archives/edgar/data/{int(company.cik)}/{acc_formatted}/{primary_doc}" if primary_doc else None
 
                         # Upsert filing
-                        stmt = pg_upsert(SECFiling).values(
-                            ticker=company.ticker,
-                            cik=company.cik,
-                            accession_number=accession,
-                            filing_type=form_type,
-                            filed_date=filed_date,
-                            edgar_url=edgar_url,
-                            description=desc or form_type,
-                        )
-                        stmt = stmt.on_conflict_do_nothing(index_elements=["accession_number"])
-                        await db.execute(stmt)
+                        async with db.begin_nested():
+                            stmt = pg_upsert(SECFiling).values(
+                                ticker=company.ticker,
+                                cik=company.cik,
+                                accession_number=accession,
+                                filing_type=form_type,
+                                filed_date=filed_date,
+                                edgar_url=edgar_url,
+                                description=desc or form_type,
+                            )
+                            stmt = stmt.on_conflict_do_nothing(index_elements=["accession_number"])
+                            await db.execute(stmt)
                         total_filings += 1
 
                         # Parse Form 4 for insider trades
@@ -233,25 +234,26 @@ async def _parse_form4(
 
             total_value = shares * price if price else None
 
-            stmt = pg_upsert(InsiderTrade).values(
-                ticker=company.ticker,
-                accession_number=accession,
-                insider_name=insider_name,
-                insider_title=insider_title,
-                trade_type=trade_type,
-                transaction_date=txn_date,
-                shares=shares,
-                price_per_share=price,
-                total_value=total_value,
-                shares_owned_after=shares_after,
-                filing_date=filing_date,
-                is_direct=(ownership_nature == "D"),
-            )
-            # Use on_conflict_do_nothing since unique constraint covers dedup
-            stmt = stmt.on_conflict_do_nothing(
-                constraint="uq_insider_trade"
-            )
-            await db.execute(stmt)
+            async with db.begin_nested():
+                stmt = pg_upsert(InsiderTrade).values(
+                    ticker=company.ticker,
+                    accession_number=accession,
+                    insider_name=insider_name,
+                    insider_title=insider_title,
+                    trade_type=trade_type,
+                    transaction_date=txn_date,
+                    shares=shares,
+                    price_per_share=price,
+                    total_value=total_value,
+                    shares_owned_after=shares_after,
+                    filing_date=filing_date,
+                    is_direct=(ownership_nature == "D"),
+                )
+                # Use on_conflict_do_nothing since unique constraint covers dedup
+                stmt = stmt.on_conflict_do_nothing(
+                    constraint="uq_insider_trade"
+                )
+                await db.execute(stmt)
             count += 1
 
         except Exception as e:

@@ -233,40 +233,41 @@ async def sync_trials_for_company(
                         drug_id = drug_slug
 
                     # Upsert trial
-                    stmt = pg_upsert(Trial).values(
-                        nct_id=nct_id,
-                        drug_id=drug_id,
-                        company_ticker=ticker,
-                        sponsor_name=lead_sponsor,
-                        title=id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown"),
-                        brief_summary=(desc_module.get("briefSummary", "") or "")[:5000],
-                        phase=phase,
-                        overall_status=status_module.get("overallStatus"),
-                        therapeutic_area=therapeutic_area,
-                        indication=indication,
-                        enrollment=enrollment,
-                        start_date=start_date,
-                        primary_completion_date=primary_completion,
-                        completion_date=completion,
-                        study_type=design_module.get("studyType"),
-                        results_first_posted=results_posted,
-                        last_update_posted=last_update,
-                        updated_at=datetime.utcnow(),
-                    )
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=["nct_id"],
-                        set_={
-                            "drug_id": stmt.excluded.drug_id,
-                            "company_ticker": stmt.excluded.company_ticker,
-                            "phase": stmt.excluded.phase,
-                            "overall_status": stmt.excluded.overall_status,
-                            "enrollment": stmt.excluded.enrollment,
-                            "primary_completion_date": stmt.excluded.primary_completion_date,
-                            "completion_date": stmt.excluded.completion_date,
-                            "updated_at": stmt.excluded.updated_at,
-                        },
-                    )
-                    await db.execute(stmt)
+                    async with db.begin_nested():
+                        stmt = pg_upsert(Trial).values(
+                            nct_id=nct_id,
+                            drug_id=drug_id,
+                            company_ticker=ticker,
+                            sponsor_name=lead_sponsor,
+                            title=id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown"),
+                            brief_summary=(desc_module.get("briefSummary", "") or "")[:5000],
+                            phase=phase,
+                            overall_status=status_module.get("overallStatus"),
+                            therapeutic_area=therapeutic_area,
+                            indication=indication,
+                            enrollment=enrollment,
+                            start_date=start_date,
+                            primary_completion_date=primary_completion,
+                            completion_date=completion,
+                            study_type=design_module.get("studyType"),
+                            results_first_posted=results_posted,
+                            last_update_posted=last_update,
+                            updated_at=datetime.utcnow(),
+                        )
+                        stmt = stmt.on_conflict_do_update(
+                            index_elements=["nct_id"],
+                            set_={
+                                "drug_id": stmt.excluded.drug_id,
+                                "company_ticker": stmt.excluded.company_ticker,
+                                "phase": stmt.excluded.phase,
+                                "overall_status": stmt.excluded.overall_status,
+                                "enrollment": stmt.excluded.enrollment,
+                                "primary_completion_date": stmt.excluded.primary_completion_date,
+                                "completion_date": stmt.excluded.completion_date,
+                                "updated_at": stmt.excluded.updated_at,
+                            },
+                        )
+                        await db.execute(stmt)
                     count += 1
 
                 except Exception as e:
@@ -307,28 +308,29 @@ async def sync_trials_for_company(
 
                         lead_sponsor = sponsor_module.get("leadSponsor", {}).get("name", sponsor_name)
 
-                        stmt = pg_upsert(Trial).values(
-                            nct_id=nct_id,
-                            company_ticker=ticker,
-                            sponsor_name=lead_sponsor,
-                            title=id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown"),
-                            brief_summary=(desc_module.get("briefSummary", "") or "")[:5000],
-                            phase=phase,
-                            overall_status=status_module.get("overallStatus"),
-                            therapeutic_area=therapeutic_area,
-                            indication=indication,
-                            enrollment=design_module.get("enrollmentInfo", {}).get("count"),
-                            start_date=_parse_date(status_module.get("startDateStruct", {}).get("date")),
-                            primary_completion_date=_parse_date(status_module.get("primaryCompletionDateStruct", {}).get("date")),
-                            completion_date=_parse_date(status_module.get("completionDateStruct", {}).get("date")),
-                            study_type=design_module.get("studyType"),
-                            updated_at=datetime.utcnow(),
-                        )
-                        stmt = stmt.on_conflict_do_update(
-                            index_elements=["nct_id"],
-                            set_={"updated_at": stmt.excluded.updated_at},
-                        )
-                        await db.execute(stmt)
+                        async with db.begin_nested():
+                            stmt = pg_upsert(Trial).values(
+                                nct_id=nct_id,
+                                company_ticker=ticker,
+                                sponsor_name=lead_sponsor,
+                                title=id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown"),
+                                brief_summary=(desc_module.get("briefSummary", "") or "")[:5000],
+                                phase=phase,
+                                overall_status=status_module.get("overallStatus"),
+                                therapeutic_area=therapeutic_area,
+                                indication=indication,
+                                enrollment=design_module.get("enrollmentInfo", {}).get("count"),
+                                start_date=_parse_date(status_module.get("startDateStruct", {}).get("date")),
+                                primary_completion_date=_parse_date(status_module.get("primaryCompletionDateStruct", {}).get("date")),
+                                completion_date=_parse_date(status_module.get("completionDateStruct", {}).get("date")),
+                                study_type=design_module.get("studyType"),
+                                updated_at=datetime.utcnow(),
+                            )
+                            stmt = stmt.on_conflict_do_update(
+                                index_elements=["nct_id"],
+                                set_={"updated_at": stmt.excluded.updated_at},
+                            )
+                            await db.execute(stmt)
                         count += 1
                     except Exception:
                         continue

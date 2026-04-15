@@ -66,10 +66,6 @@ async def sync_companies(db: AsyncSession) -> int:
                 if not ticker or ticker == "NONE":
                     continue
 
-                # We'll include all companies initially and filter by SIC later
-                # SEC doesn't include SIC in this endpoint, so we store all
-                # and will enrich with SIC data separately
-
                 # Normalize exchange names
                 exchange_map = {
                     "Nasdaq": "NASDAQ",
@@ -81,40 +77,39 @@ async def sync_companies(db: AsyncSession) -> int:
                 }
                 exchange = exchange_map.get(exchange, exchange)
 
-                # For now, filter by exchange (NYSE, NASDAQ only)
                 valid_exchanges = {"NYSE", "NASDAQ"}
                 if exchange not in valid_exchanges:
                     continue
 
-                # Upsert company
-                stmt = pg_upsert(Company).values(
-                    ticker=ticker,
-                    name=name,
-                    cik=cik,
-                    exchange=exchange,
-                    updated_at=datetime.utcnow(),
-                )
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["ticker"],
-                    set_={
-                        "name": stmt.excluded.name,
-                        "cik": stmt.excluded.cik,
-                        "exchange": stmt.excluded.exchange,
-                        "updated_at": stmt.excluded.updated_at,
-                    },
-                )
-                await db.execute(stmt)
+                # Use savepoint so one bad row doesn't kill the transaction
+                async with db.begin_nested():
+                    stmt = pg_upsert(Company).values(
+                        ticker=ticker,
+                        name=name,
+                        cik=cik,
+                        exchange=exchange,
+                        updated_at=datetime.utcnow(),
+                    )
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["ticker"],
+                        set_={
+                            "name": stmt.excluded.name,
+                            "cik": stmt.excluded.cik,
+                            "exchange": stmt.excluded.exchange,
+                            "updated_at": stmt.excluded.updated_at,
+                        },
+                    )
+                    await db.execute(stmt)
 
-                # Also create a primary sponsor alias
-                alias_stmt = pg_upsert(SponsorAlias).values(
-                    ticker=ticker,
-                    alias_name=name,
-                    is_primary=True,
-                )
-                alias_stmt = alias_stmt.on_conflict_do_nothing(
-                    index_elements=["ticker", "alias_name"],
-                )
-                await db.execute(alias_stmt)
+                    alias_stmt = pg_upsert(SponsorAlias).values(
+                        ticker=ticker,
+                        alias_name=name,
+                        is_primary=True,
+                    )
+                    alias_stmt = alias_stmt.on_conflict_do_nothing(
+                        index_elements=["ticker", "alias_name"],
+                    )
+                    await db.execute(alias_stmt)
 
                 count += 1
             except Exception as e:
