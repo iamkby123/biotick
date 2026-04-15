@@ -18,6 +18,7 @@ from app.sync.description_generator import generate_descriptions
 from app.sync.finnhub_sync import sync_prices_finnhub, sync_financials_finnhub
 from app.sync.drug_normalizer import normalize_all_drugs
 from app.sync.fda_calendar_sync import sync_fda_approvals
+from app.sync.sec_financials_sync import sync_sec_financials
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,15 @@ async def trigger_fda_sync(background_tasks: BackgroundTasks):
         return {"status": "already_running"}
     background_tasks.add_task(_run_sync_in_background, "FDA_APPROVALS", sync_fda_approvals)
     return {"status": "started", "message": "FDA approval sync started."}
+
+
+@router.post("/sec-financials")
+async def trigger_sec_financials(background_tasks: BackgroundTasks):
+    """Fill in revenue, shares, employees from SEC EDGAR XBRL. No API key needed."""
+    if "SEC_FINANCIALS" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(_run_sync_in_background, "SEC_FINANCIALS", sync_sec_financials)
+    return {"status": "started", "message": "SEC financials sync started."}
 
 
 @router.post("/company-info-edgar")
