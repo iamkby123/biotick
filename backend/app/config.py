@@ -10,12 +10,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 
 # Database — Supabase PostgreSQL
-# Expects DATABASE_URL like: postgresql+asyncpg://user:pass@host:port/dbname
+# Accepts any of:
+#   postgres://...  postgresql://...  postgresql+asyncpg://...
 _raw_url = os.environ.get("DATABASE_URL", "")
+# Normalize scheme to postgresql+asyncpg
 if _raw_url.startswith("postgres://"):
-    _raw_url = _raw_url.replace("postgres://", "postgresql://", 1)
-if _raw_url and "+asyncpg" not in _raw_url:
-    _raw_url = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    _raw_url = "postgresql+asyncpg://" + _raw_url[len("postgres://"):]
+elif _raw_url.startswith("postgresql://") and "+asyncpg" not in _raw_url:
+    _raw_url = "postgresql+asyncpg://" + _raw_url[len("postgresql://"):]
+# Strip sslmode query param (asyncpg uses ssl= connect_arg instead)
+if "?" in _raw_url:
+    _raw_url = _raw_url.split("?")[0]
 DATABASE_URL = _raw_url
 
 # SEC EDGAR
