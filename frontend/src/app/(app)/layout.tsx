@@ -9,7 +9,7 @@ export default function AppLayout({
     <div className="flex h-full">
       <Sidebar />
       <main className="flex-1 overflow-auto bg-background">
-        <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-8">
+        <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-8 page-transition">
           {children}
         </div>
       </main>
