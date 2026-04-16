@@ -3,8 +3,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
-from app.database import init_db
+from app.database import init_db, async_session
 from app.config import FRONTEND_URL
 from app.routers import companies, drugs, catalysts, filings, analyzer, options, trial_detail, competitors, edge, sync, pdufa
 
@@ -14,50 +17,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+scheduler = AsyncIOScheduler()
 
-async def auto_sync_if_empty():
-    """Auto-run syncs if database is empty (fresh deploy)."""
-    from sqlalchemy import select, func
-    from app.database import async_session
-    from app.models.company import Company
 
-    async with async_session() as db:
-        result = await db.execute(select(func.count()).select_from(Company))
-        count = result.scalar() or 0
+# ── Scheduled sync jobs ─────────────────────────────────────────────
 
-    if count == 0:
-        logger.info("Empty database detected — running auto-sync...")
-        from app.sync.company_sync import sync_companies, enrich_companies_with_sic
-        from app.sync.bulk_trial_sync import bulk_download_trials
-        from app.sync.description_generator import generate_descriptions
-        from app.sync.company_info_sync import sync_company_info_from_edgar
-        from app.sync.filing_sync import sync_filings
-        from app.sync.sec_financials_sync import sync_sec_financials
-
+async def scheduled_price_update():
+    """Update stock prices every 15 minutes during market hours."""
+    try:
+        from app.sync.finnhub_sync import sync_prices_finnhub
         async with async_session() as db:
-            await sync_companies(db)
-            logger.info("Auto-sync: companies done")
+            count = await sync_prices_finnhub(db)
+        logger.info(f"Scheduled price update: {count} updated")
+    except Exception as e:
+        logger.error(f"Scheduled price update failed: {e}")
 
-        # Run the rest in background
-        import asyncio
 
-        async def background_syncs():
-            async with async_session() as db:
-                await enrich_companies_with_sic(db)
-                logger.info("Auto-sync: SIC enrichment done")
-            async with async_session() as db:
-                await generate_descriptions(db)
-            async with async_session() as db:
-                await sync_company_info_from_edgar(db)
-            async with async_session() as db:
-                await bulk_download_trials(db)
-            async with async_session() as db:
-                await sync_filings(db)
-            async with async_session() as db:
-                await sync_sec_financials(db)
-            logger.info("Auto-sync: all background syncs complete")
+async def scheduled_filing_sync():
+    """Sync SEC filings every 6 hours."""
+    try:
+        from app.sync.filing_sync import sync_filings
+        async with async_session() as db:
+            count = await sync_filings(db)
+        logger.info(f"Scheduled filing sync: {count} filings")
+    except Exception as e:
+        logger.error(f"Scheduled filing sync failed: {e}")
 
-        asyncio.create_task(background_syncs())
+
+async def scheduled_trial_catalyst_sync():
+    """Sync trials and extract catalysts daily."""
+    try:
+        from app.sync.trial_sync import sync_all_trials
+        from app.sync.catalyst_extractor import extract_catalysts
+        from app.sync.sponsor_matcher import match_sponsors
+        async with async_session() as db:
+            await sync_all_trials(db)
+        async with async_session() as db:
+            await match_sponsors(db)
+        async with async_session() as db:
+            await extract_catalysts(db)
+        logger.info("Scheduled trial/catalyst sync complete")
+    except Exception as e:
+        logger.error(f"Scheduled trial/catalyst sync failed: {e}")
 
 
 @asynccontextmanager
@@ -66,8 +67,35 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Biotech Platform API...")
     await init_db()
     logger.info("Database initialized")
-    await auto_sync_if_empty()
+
+    # Schedule recurring syncs
+    # Prices: every 15 min during US market hours (9:30 AM - 4 PM ET, Mon-Fri)
+    scheduler.add_job(
+        scheduled_price_update,
+        IntervalTrigger(minutes=15),
+        id="price_update",
+        replace_existing=True,
+    )
+    # SEC filings: every 6 hours
+    scheduler.add_job(
+        scheduled_filing_sync,
+        CronTrigger(hour="*/6", minute=30),
+        id="filing_sync",
+        replace_existing=True,
+    )
+    # Trials + catalysts: daily at 5 AM ET
+    scheduler.add_job(
+        scheduled_trial_catalyst_sync,
+        CronTrigger(hour=5, minute=0),
+        id="trial_catalyst_sync",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info("Scheduler started — prices every 15min, filings every 6h, trials daily")
+
     yield
+
+    scheduler.shutdown()
     logger.info("Shutting down Biotech Platform API...")
 
 
@@ -109,30 +137,27 @@ app.include_router(pdufa.router)
 
 @app.get("/api/health")
 async def health_check():
-    import os
-    from app.config import DATABASE_URL
-    # Show connection info (hide password)
-    url_str = str(DATABASE_URL)
-    safe_url = url_str
-    if "@" in safe_url:
-        safe_url = safe_url.split("@")[0].rsplit(":", 1)[0] + ":***@" + safe_url.split("@")[1]
-
     db_ok = False
-    db_error = None
     try:
         from app.database import engine
         from sqlalchemy import text
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         db_ok = True
-    except Exception as e:
-        db_error = str(e)[:500]
+    except Exception:
+        pass
+
+    jobs = []
+    for job in scheduler.get_jobs():
+        jobs.append({
+            "id": job.id,
+            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+        })
 
     return {
         "status": "ok" if db_ok else "degraded",
         "service": "biotech-platform",
         "db_connected": db_ok,
-        "db_error": db_error,
-        "db_url": safe_url,
-        "env_password_set": bool(os.environ.get("SUPABASE_DB_PASSWORD")),
+        "scheduler_running": scheduler.running,
+        "scheduled_jobs": jobs,
     }
