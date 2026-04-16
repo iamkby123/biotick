@@ -333,7 +333,7 @@ function TradingViewChart({ ticker }: { ticker: string }) {
 
   if (!mounted) {
     return (
-      <div className="rounded-lg border border-border bg-surface/50 flex items-center justify-center" style={{ height: "500px" }}>
+      <div className="rounded-lg border border-border bg-surface/50 flex items-center justify-center" style={{ height: "620px" }}>
         <p className="text-sm text-muted">Loading chart...</p>
       </div>
     );
