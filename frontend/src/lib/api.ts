@@ -5,13 +5,19 @@ export async function fetchAPI<T>(
   options?: RequestInit
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
   const res = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
       ...options?.headers,
     },
+    signal: controller.signal,
     ...options,
   });
+
+  clearTimeout(timeout);
 
   if (!res.ok) {
     const error = await res.text();
