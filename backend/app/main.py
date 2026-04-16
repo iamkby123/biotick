@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     # Prices: every 15 min during US market hours (9:30 AM - 4 PM ET, Mon-Fri)
     scheduler.add_job(
         scheduled_price_update,
-        IntervalTrigger(minutes=15),
+        IntervalTrigger(minutes=60),
         id="price_update",
         replace_existing=True,
     )
