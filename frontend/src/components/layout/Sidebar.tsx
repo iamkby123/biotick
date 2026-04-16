@@ -15,6 +15,7 @@ import {
   LogOut,
   Pill,
   Users,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, useAuth } from "@/lib/providers";
@@ -24,7 +25,9 @@ const navItems = [
   { href: "/companies", label: "Screener", icon: Search },
   { href: "/catalysts", label: "Catalysts", icon: Calendar },
   { href: "/pdufa", label: "PDUFA Calendar", icon: Pill },
-  { href: "/conferences", label: "Conferences", icon: Users },
+  { href: "/earnings", label: "Earnings", icon: BarChart3 },
+  { href: "/insider-trades", label: "Insider Trades", icon: Users },
+  { href: "/conferences", label: "Conferences", icon: Activity },
   { href: "/watchlist", label: "Watchlist", icon: Star },
 ];
 

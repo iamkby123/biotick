@@ -9,7 +9,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.database import init_db, async_session
 from app.config import FRONTEND_URL
-from app.routers import companies, drugs, catalysts, filings, analyzer, options, trial_detail, competitors, edge, sync, pdufa
+from app.routers import companies, drugs, catalysts, filings, analyzer, options, trial_detail, competitors, edge, sync, pdufa, earnings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -133,6 +133,7 @@ app.include_router(competitors.router)
 app.include_router(edge.router)
 app.include_router(sync.router)
 app.include_router(pdufa.router)
+app.include_router(earnings.router)
 
 
 @app.get("/api/health")
