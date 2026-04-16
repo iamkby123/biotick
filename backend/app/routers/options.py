@@ -1,112 +1,74 @@
-import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 
-import yfinance as yf
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
 
+from app.database import get_db
 from app.cache.memory_cache import cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/options", tags=["options"])
-_executor = ThreadPoolExecutor(max_workers=2)
-
-
-def _get_expirations(ticker: str) -> list[str]:
-    """Get available option expiration dates via yfinance (blocking)."""
-    try:
-        t = yf.Ticker(ticker)
-        return list(t.options) if t.options else []
-    except Exception as e:
-        logger.warning(f"yfinance expirations error for {ticker}: {e}")
-        return []
-
-
-def _get_chain(ticker: str, expiration: str) -> dict:
-    """Get options chain for a specific expiration via yfinance (blocking)."""
-    t = yf.Ticker(ticker)
-    chain = t.option_chain(expiration)
-
-    def safe_int(v):
-        try:
-            if v != v:  # NaN check
-                return 0
-            return int(v)
-        except (ValueError, TypeError):
-            return 0
-
-    def safe_float(v):
-        try:
-            if v != v:
-                return 0.0
-            return float(v)
-        except (ValueError, TypeError):
-            return 0.0
-
-    calls = [
-        {
-            "strike": safe_float(row.get("strike")),
-            "bid": safe_float(row.get("bid")),
-            "ask": safe_float(row.get("ask")),
-            "last": safe_float(row.get("lastPrice")),
-            "volume": safe_int(row.get("volume")),
-            "open_interest": safe_int(row.get("openInterest")),
-            "iv": round(safe_float(row.get("impliedVolatility")) * 100, 1),
-            "in_the_money": bool(row.get("inTheMoney", False)),
-        }
-        for _, row in chain.calls.iterrows()
-    ]
-
-    puts = [
-        {
-            "strike": safe_float(row.get("strike")),
-            "bid": safe_float(row.get("bid")),
-            "ask": safe_float(row.get("ask")),
-            "last": safe_float(row.get("lastPrice")),
-            "volume": safe_int(row.get("volume")),
-            "open_interest": safe_int(row.get("openInterest")),
-            "iv": round(safe_float(row.get("impliedVolatility")) * 100, 1),
-            "in_the_money": bool(row.get("inTheMoney", False)),
-        }
-        for _, row in chain.puts.iterrows()
-    ]
-
-    return {"calls": calls, "puts": puts, "expiration": expiration}
 
 
 @router.get("/{ticker}/expirations")
-async def get_expirations(ticker: str):
-    """Get available option expiration dates."""
+async def get_expirations(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Get available option expiration dates from cached data."""
     ticker = ticker.upper()
     cache_key = f"options_exp:{ticker}"
     cached = cache.get(cache_key)
     if cached:
         return cached
 
-    expirations = await asyncio.get_event_loop().run_in_executor(
-        _executor, _get_expirations, ticker
+    result = await db.execute(
+        text("SELECT expiration FROM options_expirations WHERE ticker = :t AND expiration >= :today ORDER BY expiration"),
+        {"t": ticker, "today": date.today()},
     )
-    result = {"ticker": ticker, "expirations": expirations}
-    cache.set(cache_key, result, 900)
-    return result
+    expirations = [row[0].isoformat() for row in result.fetchall()]
+
+    resp = {"ticker": ticker, "expirations": expirations}
+    cache.set(cache_key, resp, 300)
+    return resp
 
 
 @router.get("/{ticker}/chain")
-async def get_chain(ticker: str, expiration: str):
-    """Get options chain for a specific expiration date."""
+async def get_chain(ticker: str, expiration: str, db: AsyncSession = Depends(get_db)):
+    """Get options chain for a specific expiration date from cached data."""
     ticker = ticker.upper()
     cache_key = f"options_chain:{ticker}:{expiration}"
     cached = cache.get(cache_key)
     if cached:
         return cached
 
-    try:
-        chain = await asyncio.get_event_loop().run_in_executor(
-            _executor, _get_chain, ticker, expiration
-        )
-        chain["ticker"] = ticker
-        cache.set(cache_key, chain, 600)
-        return chain
-    except Exception as e:
-        logger.warning(f"Options chain error for {ticker}: {e}")
-        return {"ticker": ticker, "calls": [], "puts": [], "expiration": expiration}
+    result = await db.execute(
+        text("""SELECT option_type, strike, bid, ask, last_price, volume,
+                       open_interest, implied_volatility, in_the_money
+                FROM options_cache
+                WHERE ticker = :t AND expiration = :exp
+                ORDER BY strike"""),
+        {"t": ticker, "exp": expiration},
+    )
+    rows = result.fetchall()
+
+    calls = []
+    puts = []
+    for r in rows:
+        entry = {
+            "strike": r[1],
+            "bid": r[2] or 0,
+            "ask": r[3] or 0,
+            "last": r[4] or 0,
+            "volume": r[5] or 0,
+            "open_interest": r[6] or 0,
+            "iv": round((r[7] or 0) * 100, 1),
+            "in_the_money": r[8] or False,
+        }
+        if r[0] == "call":
+            calls.append(entry)
+        else:
+            puts.append(entry)
+
+    chain = {"ticker": ticker, "calls": calls, "puts": puts, "expiration": expiration}
+    cache.set(cache_key, chain, 300)
+    return chain
