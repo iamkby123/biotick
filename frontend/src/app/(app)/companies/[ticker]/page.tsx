@@ -343,7 +343,7 @@ function TradingViewChart({ ticker }: { ticker: string }) {
     <div
       id={containerId}
       className="tradingview-widget-container rounded-lg overflow-hidden border border-border"
-      style={{ height: "500px", width: "100%", minWidth: "100%" }}
+      style={{ height: "620px", width: "100%", minWidth: "100%" }}
     />
   );
 }
