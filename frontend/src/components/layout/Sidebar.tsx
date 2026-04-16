@@ -27,7 +27,8 @@ const navItems = [
   { href: "/pdufa", label: "PDUFA Calendar", icon: Pill },
   { href: "/earnings", label: "Earnings", icon: BarChart3 },
   { href: "/insider-trades", label: "Insider Trades", icon: Users },
-  { href: "/conferences", label: "Conferences", icon: Activity },
+  { href: "/historical", label: "Past Catalysts", icon: Activity },
+  { href: "/conferences", label: "Conferences", icon: Calendar },
   { href: "/watchlist", label: "Watchlist", icon: Star },
 ];
 
