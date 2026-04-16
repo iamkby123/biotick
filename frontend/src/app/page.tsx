@@ -17,10 +17,7 @@ import {
   ChevronUp,
   BarChart3,
   Zap,
-  Dna,
-  Microscope,
   Pill,
-  HeartPulse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -85,52 +82,50 @@ function Navbar() {
   );
 }
 
+/* ── Stock chart SVG paths (biotech-style volatile moves) ── */
+const CHART_PATHS = [
+  // Spike and crash pattern (like Blue Water Vaccines -94%)
+  "M0,180 L20,175 L40,170 L60,160 L80,140 L100,80 L120,40 L140,20 L150,15 L160,25 L180,120 L200,160 L220,175 L240,180 L260,182 L280,184 L320,185 L360,186 L400,186",
+  // Gradual decline with a bounce (like Inflarx)
+  "M0,40 L30,45 L60,55 L80,70 L90,30 L100,25 L110,35 L130,80 L160,120 L200,155 L240,170 L280,178 L320,182 L360,184 L400,185",
+  // Pump and dump pattern (like Eargo)
+  "M0,100 L20,95 L40,85 L60,60 L70,40 L80,30 L90,25 L100,35 L110,50 L120,90 L140,140 L160,165 L180,175 L200,180 L240,183 L280,185 L320,186 L360,186 L400,187",
+  // Rally pattern (bullish biotech)
+  "M0,185 L40,183 L80,180 L120,170 L140,155 L160,130 L180,100 L200,70 L220,50 L240,35 L260,25 L280,20 L300,22 L320,18 L340,15 L360,20 L380,18 L400,15",
+];
+
 /* ── Hero with biotech background ── */
 function Hero() {
   return (
     <section className="relative overflow-hidden min-h-[85vh] flex items-center">
       {/* Animated background */}
       <div className="absolute inset-0">
-        {/* DNA helix gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/8 via-accent/3 to-transparent" />
-        {/* Floating molecule dots */}
-        <div className="absolute inset-0 overflow-hidden">
-          {Array.from({ length: 30 }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute rounded-full bg-accent/20 animate-pulse"
-              style={{
-                width: `${Math.random() * 4 + 2}px`,
-                height: `${Math.random() * 4 + 2}px`,
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${Math.random() * 3 + 2}s`,
-              }}
-            />
-          ))}
-        </div>
+        <div className="absolute inset-0 bg-gradient-to-b from-accent/8 via-accent/2 to-transparent" />
+
+        {/* Stock chart backgrounds — dramatic biotech moves */}
+        <svg className="absolute top-[10%] left-0 w-full h-[200px] opacity-[0.06]" viewBox="0 0 400 200" preserveAspectRatio="none">
+          <path d={CHART_PATHS[0]} fill="none" stroke="var(--color-negative)" strokeWidth="2" />
+          <path d={CHART_PATHS[0]} fill="url(#redFade)" />
+          <defs><linearGradient id="redFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--color-negative)" stopOpacity="0.15" /><stop offset="100%" stopColor="var(--color-negative)" stopOpacity="0" /></linearGradient></defs>
+        </svg>
+        <svg className="absolute top-[35%] left-0 w-full h-[200px] opacity-[0.05]" viewBox="0 0 400 200" preserveAspectRatio="none">
+          <path d={CHART_PATHS[3]} fill="none" stroke="var(--color-positive)" strokeWidth="2" />
+          <path d={CHART_PATHS[3]} fill="url(#greenFade)" />
+          <defs><linearGradient id="greenFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--color-positive)" stopOpacity="0.12" /><stop offset="100%" stopColor="var(--color-positive)" stopOpacity="0" /></linearGradient></defs>
+        </svg>
+        <svg className="absolute bottom-[5%] left-0 w-full h-[200px] opacity-[0.04]" viewBox="0 0 400 200" preserveAspectRatio="none">
+          <path d={CHART_PATHS[2]} fill="none" stroke="var(--color-negative)" strokeWidth="1.5" />
+        </svg>
+
         {/* Grid overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: "linear-gradient(var(--color-accent) 1px, transparent 1px), linear-gradient(90deg, var(--color-accent) 1px, transparent 1px)",
-            backgroundSize: "60px 60px",
-          }}
-        />
-        {/* Floating biotech icons */}
-        <div className="absolute top-20 left-[10%] text-accent/10 animate-bounce" style={{ animationDuration: "6s" }}>
-          <Dna className="w-16 h-16" />
-        </div>
-        <div className="absolute top-40 right-[15%] text-accent/10 animate-bounce" style={{ animationDuration: "8s", animationDelay: "2s" }}>
-          <Microscope className="w-12 h-12" />
-        </div>
-        <div className="absolute bottom-32 left-[20%] text-accent/10 animate-bounce" style={{ animationDuration: "7s", animationDelay: "1s" }}>
-          <Pill className="w-10 h-10" />
-        </div>
-        <div className="absolute bottom-20 right-[25%] text-accent/10 animate-bounce" style={{ animationDuration: "9s", animationDelay: "3s" }}>
-          <HeartPulse className="w-14 h-14" />
-        </div>
+        <div className="absolute inset-0 opacity-[0.025]" style={{
+          backgroundImage: "linear-gradient(var(--color-accent) 1px, transparent 1px), linear-gradient(90deg, var(--color-accent) 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+        }} />
+
+        {/* Glow orbs */}
+        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-accent/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-negative/3 rounded-full blur-[100px]" />
       </div>
 
       <div className="relative max-w-6xl mx-auto px-6 py-24 text-center">
@@ -140,11 +135,12 @@ function Hero() {
         </div>
 
         <h1 className="text-5xl md:text-6xl lg:text-[80px] font-bold tracking-tight leading-[1.05] max-w-5xl mx-auto animate-fade-in" style={{ animationDelay: "0.1s" }}>
-          Your unfair advantage in{" "}
-          <span className="relative">
+          Modern{" "}
+          <span className="relative inline-block">
             <span className="text-accent">biotech</span>
             <span className="absolute -bottom-2 left-0 right-0 h-1 bg-accent/30 rounded-full" />
           </span>
+          {" "}data
         </h1>
 
         <p className="text-lg md:text-xl text-muted mt-8 max-w-2xl mx-auto leading-relaxed animate-fade-in" style={{ animationDelay: "0.2s" }}>
@@ -390,10 +386,14 @@ function Pricing() {
 /* ── FAQ ── */
 function FAQ() {
   const faqs = [
-    { q: "Where does the data come from?", a: "We pull data from ClinicalTrials.gov, SEC EDGAR, OpenFDA, and Finnhub. All data is normalized and cross-referenced for trading relevance." },
-    { q: "How often is the data updated?", a: "Market data updates every 15 minutes during trading hours. SEC filings sync every 6 hours. Clinical trials update daily." },
-    { q: "Can I cancel my Pro subscription?", a: "Yes, cancel anytime. Your access continues until the end of your billing period. No questions asked." },
-    { q: "Is there an API?", a: "Not yet, but we're planning a developer API. Join the waitlist by signing up for a free account." },
+    { q: "Why invest in biotech?", a: "Biotech stocks can move 50-200% on a single FDA decision or clinical trial result. A Phase 3 success or new drug approval can double a stock overnight. This volatility creates huge opportunities for informed traders who track catalysts." },
+    { q: "What is a PDUFA date?", a: "PDUFA (Prescription Drug User Fee Act) dates are FDA-mandated deadlines for drug approval decisions. The FDA must respond by the PDUFA date, making them the most predictable binary events in biotech. Stocks often move significantly on these dates." },
+    { q: "What are clinical trial phases?", a: "Phase 1 tests safety in a small group. Phase 2 tests efficacy and dosing. Phase 3 is the pivotal trial with thousands of patients — success here often leads to FDA approval. Phase 4 is post-approval monitoring. Each phase advancement is a bullish catalyst." },
+    { q: "What is a catalyst in biotech?", a: "A catalyst is any upcoming event that could move a stock's price — FDA decisions, clinical trial data readouts, advisory committee meetings, earnings, or conference presentations. Biotick scores each catalyst by significance so you know which ones matter most." },
+    { q: "Where does the data come from?", a: "We aggregate from ClinicalTrials.gov (5,400+ trials), SEC EDGAR (18,000+ filings and insider trades), OpenFDA (approval data), and Finnhub (real-time market data). All data is normalized and cross-referenced." },
+    { q: "How often is the data updated?", a: "Stock prices update every 15 minutes during market hours. SEC filings sync every 6 hours. Clinical trials and catalysts update daily. Options flow data refreshes daily." },
+    { q: "What does the put/call ratio tell me?", a: "The put/call ratio measures bearish vs bullish options activity. A ratio above 1.0 means more puts (bearish bets) than calls. Below 0.7 is bullish. In biotech, a rising put/call ratio before a catalyst often signals institutional hedging." },
+    { q: "Can I cancel my Pro subscription?", a: "Yes, cancel anytime from your Stripe billing portal. Your access continues until the end of your billing period. No questions asked." },
   ];
 
   return (
