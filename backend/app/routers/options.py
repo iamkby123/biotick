@@ -14,8 +14,17 @@ _executor = ThreadPoolExecutor(max_workers=2)
 
 def _get_expirations(ticker: str) -> list[str]:
     """Get available option expiration dates (blocking)."""
-    t = yf.Ticker(ticker)
-    return list(t.options) if t.options else []
+    import time
+    for attempt in range(3):
+        try:
+            t = yf.Ticker(ticker)
+            return list(t.options) if t.options else []
+        except Exception as e:
+            if "Rate" in str(e) or "429" in str(e):
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+    return []
 
 
 def _get_chain(ticker: str, expiration: str) -> dict:
@@ -67,7 +76,7 @@ async def get_expirations(ticker: str):
         raise HTTPException(status_code=400, detail=f"Failed to get expirations: {e}")
 
     result = {"ticker": ticker.upper(), "expirations": expirations}
-    cache.set(cache_key, result, 300)
+    cache.set(cache_key, result, 900)  # Cache 15 min to avoid rate limits
     return result
 
 
@@ -86,5 +95,5 @@ async def get_chain(ticker: str, expiration: str):
         raise HTTPException(status_code=400, detail=f"Failed to get chain: {e}")
 
     chain["ticker"] = ticker.upper()
-    cache.set(cache_key, chain, 120)
+    cache.set(cache_key, chain, 600)  # Cache 10 min to avoid rate limits
     return chain
