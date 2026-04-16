@@ -164,8 +164,8 @@ function Features() {
     },
     {
       icon: BarChart3,
-      title: "Options Analytics",
-      description: "Implied move calculator, IV rank tracking, and options chain viewer for catalyst-driven biotech events.",
+      title: "Options Flow",
+      description: "Visualize call vs put volume by expiration. Put/call ratio and sentiment analysis for every biotech stock.",
     },
     {
       icon: FileText,
