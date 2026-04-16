@@ -12,12 +12,24 @@ router = APIRouter(prefix="/api/options", tags=["options"])
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
+def _make_session():
+    """Create a requests session with browser-like headers."""
+    import requests
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    })
+    return s
+
+_yf_session = _make_session()
+
+
 def _get_expirations(ticker: str) -> list[str]:
     """Get available option expiration dates (blocking)."""
     import time
     for attempt in range(3):
         try:
-            t = yf.Ticker(ticker)
+            t = yf.Ticker(ticker, session=_yf_session)
             return list(t.options) if t.options else []
         except Exception as e:
             if "Rate" in str(e) or "429" in str(e):
@@ -29,7 +41,7 @@ def _get_expirations(ticker: str) -> list[str]:
 
 def _get_chain(ticker: str, expiration: str) -> dict:
     """Get options chain for a specific expiration (blocking)."""
-    t = yf.Ticker(ticker)
+    t = yf.Ticker(ticker, session=_yf_session)
     chain = t.option_chain(expiration)
 
     calls = []
