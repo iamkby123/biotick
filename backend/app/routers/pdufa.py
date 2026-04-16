@@ -27,8 +27,10 @@ async def get_pdufa_dates(
     """Get PDUFA target action dates (FDA approval decision deadlines)."""
     today = date.today()
 
+    # Show all catalyst types — DATA_READOUT from Phase 2/3 trials are
+    # the key events biotech investors track alongside PDUFA dates
     query = select(Catalyst).where(
-        Catalyst.event_type.in_(["PDUFA", "FDA_APPROVAL", "ADVISORY_COMMITTEE"])
+        Catalyst.significance_score >= 5
     )
 
     if upcoming_only:
