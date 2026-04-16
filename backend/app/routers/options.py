@@ -1,32 +1,77 @@
+import asyncio
 import logging
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
-import httpx
-from fastapi import APIRouter, HTTPException
+import yfinance as yf
+from fastapi import APIRouter
 
 from app.cache.memory_cache import cache
-from app.config import FINNHUB_API_KEY
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/options", tags=["options"])
-
-YAHOO_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-}
+_executor = ThreadPoolExecutor(max_workers=2)
 
 
-async def _fetch_yahoo_options(ticker: str, expiration_ts: int | None = None) -> dict:
-    """Fetch options data from Yahoo Finance v7 API (no library, direct HTTP)."""
-    url = f"https://query2.finance.yahoo.com/v7/finance/options/{ticker}"
-    params = {}
-    if expiration_ts:
-        params["date"] = str(expiration_ts)
+def _get_expirations(ticker: str) -> list[str]:
+    """Get available option expiration dates via yfinance (blocking)."""
+    try:
+        t = yf.Ticker(ticker)
+        return list(t.options) if t.options else []
+    except Exception as e:
+        logger.warning(f"yfinance expirations error for {ticker}: {e}")
+        return []
 
-    async with httpx.AsyncClient(headers=YAHOO_HEADERS, timeout=15) as client:
-        resp = await client.get(url, params=params)
-        if resp.status_code != 200:
-            return {}
-        return resp.json()
+
+def _get_chain(ticker: str, expiration: str) -> dict:
+    """Get options chain for a specific expiration via yfinance (blocking)."""
+    t = yf.Ticker(ticker)
+    chain = t.option_chain(expiration)
+
+    def safe_int(v):
+        try:
+            if v != v:  # NaN check
+                return 0
+            return int(v)
+        except (ValueError, TypeError):
+            return 0
+
+    def safe_float(v):
+        try:
+            if v != v:
+                return 0.0
+            return float(v)
+        except (ValueError, TypeError):
+            return 0.0
+
+    calls = [
+        {
+            "strike": safe_float(row.get("strike")),
+            "bid": safe_float(row.get("bid")),
+            "ask": safe_float(row.get("ask")),
+            "last": safe_float(row.get("lastPrice")),
+            "volume": safe_int(row.get("volume")),
+            "open_interest": safe_int(row.get("openInterest")),
+            "iv": round(safe_float(row.get("impliedVolatility")) * 100, 1),
+            "in_the_money": bool(row.get("inTheMoney", False)),
+        }
+        for _, row in chain.calls.iterrows()
+    ]
+
+    puts = [
+        {
+            "strike": safe_float(row.get("strike")),
+            "bid": safe_float(row.get("bid")),
+            "ask": safe_float(row.get("ask")),
+            "last": safe_float(row.get("lastPrice")),
+            "volume": safe_int(row.get("volume")),
+            "open_interest": safe_int(row.get("openInterest")),
+            "iv": round(safe_float(row.get("impliedVolatility")) * 100, 1),
+            "in_the_money": bool(row.get("inTheMoney", False)),
+        }
+        for _, row in chain.puts.iterrows()
+    ]
+
+    return {"calls": calls, "puts": puts, "expiration": expiration}
 
 
 @router.get("/{ticker}/expirations")
@@ -38,24 +83,12 @@ async def get_expirations(ticker: str):
     if cached:
         return cached
 
-    try:
-        data = await _fetch_yahoo_options(ticker)
-        result_data = data.get("optionChain", {}).get("result", [])
-        if not result_data:
-            return {"ticker": ticker, "expirations": []}
-
-        timestamps = result_data[0].get("expirationDates", [])
-        expirations = [
-            datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
-            for ts in timestamps
-        ]
-
-        result = {"ticker": ticker, "expirations": expirations}
-        cache.set(cache_key, result, 900)
-        return result
-    except Exception as e:
-        logger.warning(f"Options expirations error for {ticker}: {e}")
-        return {"ticker": ticker, "expirations": []}
+    expirations = await asyncio.get_event_loop().run_in_executor(
+        _executor, _get_expirations, ticker
+    )
+    result = {"ticker": ticker, "expirations": expirations}
+    cache.set(cache_key, result, 900)
+    return result
 
 
 @router.get("/{ticker}/chain")
@@ -68,35 +101,12 @@ async def get_chain(ticker: str, expiration: str):
         return cached
 
     try:
-        # Convert date to Unix timestamp
-        exp_dt = datetime.strptime(expiration, "%Y-%m-%d")
-        exp_ts = int(exp_dt.timestamp())
-
-        data = await _fetch_yahoo_options(ticker, exp_ts)
-        result_data = data.get("optionChain", {}).get("result", [])
-        if not result_data:
-            return {"ticker": ticker, "calls": [], "puts": [], "expiration": expiration}
-
-        options = result_data[0].get("options", [{}])[0]
-
-        def parse_row(row: dict) -> dict:
-            return {
-                "strike": row.get("strike", 0),
-                "bid": row.get("bid", 0),
-                "ask": row.get("ask", 0),
-                "last": row.get("lastPrice", 0),
-                "volume": row.get("volume", 0),
-                "open_interest": row.get("openInterest", 0),
-                "iv": round(row.get("impliedVolatility", 0) * 100, 1),
-                "in_the_money": row.get("inTheMoney", False),
-            }
-
-        calls = [parse_row(r) for r in options.get("calls", [])]
-        puts = [parse_row(r) for r in options.get("puts", [])]
-
-        chain = {"ticker": ticker, "calls": calls, "puts": puts, "expiration": expiration}
+        chain = await asyncio.get_event_loop().run_in_executor(
+            _executor, _get_chain, ticker, expiration
+        )
+        chain["ticker"] = ticker
         cache.set(cache_key, chain, 600)
         return chain
     except Exception as e:
-        logger.warning(f"Options chain error for {ticker}/{expiration}: {e}")
+        logger.warning(f"Options chain error for {ticker}: {e}")
         return {"ticker": ticker, "calls": [], "puts": [], "expiration": expiration}
