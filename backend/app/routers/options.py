@@ -32,43 +32,51 @@ async def get_expirations(ticker: str, db: AsyncSession = Depends(get_db)):
     return resp
 
 
-@router.get("/{ticker}/chain")
-async def get_chain(ticker: str, expiration: str, db: AsyncSession = Depends(get_db)):
-    """Get options chain for a specific expiration date from cached data."""
+@router.get("/{ticker}/volume-summary")
+async def get_volume_summary(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Get call vs put volume by expiration date for charting."""
     ticker = ticker.upper()
-    cache_key = f"options_chain:{ticker}:{expiration}"
+    cache_key = f"options_vol:{ticker}"
     cached = cache.get(cache_key)
     if cached:
         return cached
 
     result = await db.execute(
-        text("""SELECT option_type, strike, bid, ask, last_price, volume,
-                       open_interest, implied_volatility, in_the_money
+        text("""SELECT expiration, option_type, SUM(volume) as total_volume, SUM(open_interest) as total_oi
                 FROM options_cache
-                WHERE ticker = :t AND expiration = :exp
-                ORDER BY strike"""),
-        {"t": ticker, "exp": expiration},
+                WHERE ticker = :t
+                GROUP BY expiration, option_type
+                ORDER BY expiration"""),
+        {"t": ticker},
     )
     rows = result.fetchall()
 
-    calls = []
-    puts = []
-    for r in rows:
-        entry = {
-            "strike": r[1],
-            "bid": r[2] or 0,
-            "ask": r[3] or 0,
-            "last": r[4] or 0,
-            "volume": r[5] or 0,
-            "open_interest": r[6] or 0,
-            "iv": round((r[7] or 0) * 100, 1),
-            "in_the_money": r[8] or False,
-        }
-        if r[0] == "call":
-            calls.append(entry)
+    # Group by expiration
+    by_exp: dict = {}
+    for exp, opt_type, vol, oi in rows:
+        key = exp.isoformat()
+        if key not in by_exp:
+            by_exp[key] = {"expiration": key, "call_volume": 0, "put_volume": 0, "call_oi": 0, "put_oi": 0}
+        if opt_type == "call":
+            by_exp[key]["call_volume"] = vol or 0
+            by_exp[key]["call_oi"] = oi or 0
         else:
-            puts.append(entry)
+            by_exp[key]["put_volume"] = vol or 0
+            by_exp[key]["put_oi"] = oi or 0
 
-    chain = {"ticker": ticker, "calls": calls, "puts": puts, "expiration": expiration}
-    cache.set(cache_key, chain, 300)
-    return chain
+    data = list(by_exp.values())
+
+    # Calculate put/call ratio
+    total_call_vol = sum(d["call_volume"] for d in data)
+    total_put_vol = sum(d["put_volume"] for d in data)
+    pc_ratio = round(total_put_vol / total_call_vol, 2) if total_call_vol > 0 else 0
+
+    resp = {
+        "ticker": ticker,
+        "data": data,
+        "total_call_volume": total_call_vol,
+        "total_put_volume": total_put_vol,
+        "put_call_ratio": pc_ratio,
+    }
+    cache.set(cache_key, resp, 300)
+    return resp

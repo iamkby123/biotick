@@ -69,7 +69,6 @@ export default function CompanyDetailPage({
 }) {
   const { ticker } = use(params);
   const [activeTab, setActiveTab] = useState<"overview" | "pipeline" | "trials" | "options" | "filings">("overview");
-  const [selectedExpiration, setSelectedExpiration] = useState<string | null>(null);
 
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ["company", ticker],
@@ -101,9 +100,14 @@ export default function CompanyDetailPage({
     queryFn: () => fetchAPI(`/companies/${ticker}/insider-summary`),
   });
 
-  const { data: expirations } = useQuery<{ expirations: string[] }>({
-    queryKey: ["options-exp", ticker],
-    queryFn: () => fetchAPI(`/options/${ticker}/expirations`),
+  const { data: optionsVolume } = useQuery<{
+    data: Array<{ expiration: string; call_volume: number; put_volume: number }>;
+    total_call_volume: number;
+    total_put_volume: number;
+    put_call_ratio: number;
+  }>({
+    queryKey: ["options-volume", ticker],
+    queryFn: () => fetchAPI(`/options/${ticker}/volume-summary`),
     enabled: activeTab === "options",
   });
 
@@ -126,18 +130,7 @@ export default function CompanyDetailPage({
     enabled: activeTab === "overview",
   });
 
-  // Auto-select first expiration when options data loads
-  useEffect(() => {
-    if (expirations?.expirations?.[0] && !selectedExpiration) {
-      setSelectedExpiration(expirations.expirations[0]);
-    }
-  }, [expirations, selectedExpiration]);
-
-  const { data: chainData } = useQuery<{ calls: OptionRow[]; puts: OptionRow[] }>({
-    queryKey: ["options-chain", ticker, selectedExpiration],
-    queryFn: () => fetchAPI(`/options/${ticker}/chain?expiration=${selectedExpiration}`),
-    enabled: activeTab === "options" && !!selectedExpiration,
-  });
+  const _unused_effect = useEffect; // keep import used
 
   if (isLoading) {
     return (
@@ -161,7 +154,7 @@ export default function CompanyDetailPage({
     { id: "overview" as const, label: "Overview" },
     { id: "pipeline" as const, label: "Pipeline", count: pipeline?.length },
     { id: "trials" as const, label: "Clinical Trials", count: trialsData?.total },
-    { id: "options" as const, label: "Options Chain" },
+    { id: "options" as const, label: "Options Flow" },
     { id: "filings" as const, label: "SEC Filings", count: filingsData?.filings?.length },
   ];
 
@@ -226,12 +219,7 @@ export default function CompanyDetailPage({
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                if (tab.id === "options" && expirations?.expirations?.[0] && !selectedExpiration) {
-                  setSelectedExpiration(expirations.expirations[0]);
-                }
-              }}
+              onClick={() => setActiveTab(tab.id)}
               className={cn(
                 "px-4 py-2.5 text-[13px] font-medium border-b-2 transition-colors",
                 activeTab === tab.id
@@ -270,12 +258,7 @@ export default function CompanyDetailPage({
       )}
 
       {activeTab === "options" && (
-        <OptionsTab
-          expirations={expirations?.expirations || []}
-          selectedExpiration={selectedExpiration}
-          onSelectExpiration={setSelectedExpiration}
-          chain={chainData}
-        />
+        <OptionsFlowTab data={optionsVolume} />
       )}
 
       {activeTab === "filings" && (
@@ -816,106 +799,124 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
   );
 }
 
-/* ── Options Tab ── */
-function OptionsTab({
-  expirations,
-  selectedExpiration,
-  onSelectExpiration,
-  chain,
-}: {
-  expirations: string[];
-  selectedExpiration: string | null;
-  onSelectExpiration: (exp: string) => void;
-  chain: { calls: OptionRow[]; puts: OptionRow[] } | undefined;
+/* ── Options Flow Tab ── */
+function OptionsFlowTab({ data }: {
+  data: {
+    data: Array<{ expiration: string; call_volume: number; put_volume: number }>;
+    total_call_volume: number;
+    total_put_volume: number;
+    put_call_ratio: number;
+  } | undefined;
 }) {
-  if (expirations.length === 0) {
+  if (!data || data.data.length === 0) {
     return <EmptyState text="No options data available for this ticker" />;
   }
 
+  const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = require("recharts");
+
+  const chartData = data.data.map((d) => ({
+    date: d.expiration.slice(5), // MM-DD
+    Calls: d.call_volume,
+    Puts: d.put_volume,
+  }));
+
+  const totalVol = data.total_call_volume + data.total_put_volume;
+
   return (
-    <div className="space-y-4">
-      {/* Expiration selector */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted">Expiration:</span>
-        {expirations.slice(0, 8).map((exp) => (
-          <button
-            key={exp}
-            onClick={() => onSelectExpiration(exp)}
-            className={cn(
-              "px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors",
-              selectedExpiration === exp ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground hover:bg-surface-hover"
-            )}
-          >
-            {exp}
-          </button>
-        ))}
+    <div className="space-y-6">
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-lg border border-border p-4">
+          <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Call Volume</p>
+          <p className="text-xl font-bold text-positive">{data.total_call_volume.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Put Volume</p>
+          <p className="text-xl font-bold text-negative">{data.total_put_volume.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Put/Call Ratio</p>
+          <p className={cn("text-xl font-bold", data.put_call_ratio > 1 ? "text-negative" : "text-positive")}>
+            {data.put_call_ratio}
+          </p>
+          <p className="text-[10px] text-muted mt-0.5">
+            {data.put_call_ratio > 1.2 ? "Bearish sentiment" : data.put_call_ratio < 0.8 ? "Bullish sentiment" : "Neutral"}
+          </p>
+        </div>
       </div>
 
-      {chain && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Calls */}
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-positive mb-2">Calls</h3>
-            <div className="rounded-lg border border-border overflow-hidden">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="bg-surface/50 border-b border-border">
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-muted">Strike</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Bid</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Ask</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Vol</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">OI</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">IV</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chain.calls.slice(0, 20).map((c, i) => (
-                    <tr key={i} className={cn("border-b border-border last:border-b-0", c.in_the_money && "bg-positive/5")}>
-                      <td className="px-3 py-1.5 font-mono font-medium">${c.strike}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{c.bid.toFixed(2)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{c.ask.toFixed(2)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-muted">{c.volume}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-muted">{c.open_interest}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-accent">{c.iv}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* Chart */}
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-4">
+          Volume by Expiration
+        </h3>
+        <ResponsiveContainer width="100%" height={320}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 11, fill: "var(--color-muted)" }}
+              axisLine={{ stroke: "var(--color-border)" }}
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: "var(--color-muted)" }}
+              axisLine={{ stroke: "var(--color-border)" }}
+              tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "8px",
+                fontSize: 12,
+              }}
+              formatter={(value: number, name: string) => [value.toLocaleString(), name]}
+            />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Line
+              type="monotone"
+              dataKey="Calls"
+              stroke="#22c55e"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "#22c55e" }}
+              activeDot={{ r: 5 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="Puts"
+              stroke="#ef4444"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "#ef4444" }}
+              activeDot={{ r: 5 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
 
-          {/* Puts */}
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-negative mb-2">Puts</h3>
-            <div className="rounded-lg border border-border overflow-hidden">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="bg-surface/50 border-b border-border">
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-muted">Strike</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Bid</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Ask</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">Vol</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">OI</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-muted">IV</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chain.puts.slice(0, 20).map((p, i) => (
-                    <tr key={i} className={cn("border-b border-border last:border-b-0", p.in_the_money && "bg-negative/5")}>
-                      <td className="px-3 py-1.5 font-mono font-medium">${p.strike}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{p.bid.toFixed(2)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{p.ask.toFixed(2)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-muted">{p.volume}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-muted">{p.open_interest}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-accent">{p.iv}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* Sentiment bar */}
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">
+          Call / Put Split
+        </h3>
+        <div className="flex h-3 rounded-full overflow-hidden">
+          <div
+            className="bg-positive transition-all"
+            style={{ width: `${totalVol > 0 ? (data.total_call_volume / totalVol) * 100 : 50}%` }}
+          />
+          <div
+            className="bg-negative transition-all"
+            style={{ width: `${totalVol > 0 ? (data.total_put_volume / totalVol) * 100 : 50}%` }}
+          />
         </div>
-      )}
+        <div className="flex justify-between mt-2 text-[11px]">
+          <span className="text-positive font-medium">
+            Calls {totalVol > 0 ? Math.round((data.total_call_volume / totalVol) * 100) : 50}%
+          </span>
+          <span className="text-negative font-medium">
+            Puts {totalVol > 0 ? Math.round((data.total_put_volume / totalVol) * 100) : 50}%
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
