@@ -126,6 +126,13 @@ export default function CompanyDetailPage({
     enabled: activeTab === "overview",
   });
 
+  // Auto-select first expiration when options data loads
+  useEffect(() => {
+    if (expirations?.expirations?.[0] && !selectedExpiration) {
+      setSelectedExpiration(expirations.expirations[0]);
+    }
+  }, [expirations, selectedExpiration]);
+
   const { data: chainData } = useQuery<{ calls: OptionRow[]; puts: OptionRow[] }>({
     queryKey: ["options-chain", ticker, selectedExpiration],
     queryFn: () => fetchAPI(`/options/${ticker}/chain?expiration=${selectedExpiration}`),
