@@ -294,7 +294,9 @@ function TradingViewChart({ ticker }: { ticker: string }) {
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.async = true;
     script.innerHTML = JSON.stringify({
-      autosize: true,
+      autosize: false,
+      width: "100%",
+      height: 580,
       symbol: ticker,
       interval: "D",
       timezone: "America/New_York",
