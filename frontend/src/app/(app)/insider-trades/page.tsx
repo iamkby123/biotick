@@ -6,6 +6,8 @@ import Link from "next/link";
 import { UserCheck, Loader2, ArrowUpRight, ArrowDownRight, Filter } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn, formatPrice } from "@/lib/utils";
+import { PaywallGate } from "@/components/PaywallGate";
+import { usePlan } from "@/hooks/usePlan";
 
 interface Trade {
   id: number;
@@ -79,9 +81,10 @@ export default function InsiderTradesPage() {
     },
   });
 
+  const { isPro } = usePlan();
   const trades = data?.trades || [];
 
-  return (
+  const content = (
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -195,4 +198,9 @@ export default function InsiderTradesPage() {
       )}
     </div>
   );
+
+  if (!isPro) {
+    return <PaywallGate feature="Insider Trades">{content}</PaywallGate>;
+  }
+  return content;
 }

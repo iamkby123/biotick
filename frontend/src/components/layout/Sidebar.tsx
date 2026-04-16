@@ -57,7 +57,7 @@ const navSections = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
 
   return (
     <aside className="w-[220px] bg-surface/50 backdrop-blur-sm border-r border-border flex flex-col shrink-0 h-screen sticky top-0">
@@ -113,7 +113,7 @@ export default function Sidebar() {
           {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           {theme === "dark" ? "Light mode" : "Dark mode"}
         </button>
-        {user ? (
+        {loading ? null : user ? (
           <button
             onClick={signOut}
             className="flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-muted hover:text-foreground hover:bg-surface-hover w-full transition-all duration-100"

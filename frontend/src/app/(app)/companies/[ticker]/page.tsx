@@ -3,6 +3,8 @@
 import { use, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { PaywallBanner } from "@/components/PaywallGate";
+import { usePlan } from "@/hooks/usePlan";
 import {
   ArrowLeft,
   ExternalLink,
@@ -258,14 +260,20 @@ export default function CompanyDetailPage({
       )}
 
       {activeTab === "options" && (
-        <OptionsFlowTab data={optionsVolume} />
+        <>
+          <PaywallBanner feature="Options Flow" />
+          <OptionsFlowTab data={optionsVolume} />
+        </>
       )}
 
       {activeTab === "filings" && (
-        <FilingsTab
-          filings={filingsData?.filings || []}
-          trades={tradesData?.trades || []}
-        />
+        <>
+          <PaywallBanner feature="Full SEC Filings & Insider Data" />
+          <FilingsTab
+            filings={filingsData?.filings || []}
+            trades={tradesData?.trades || []}
+          />
+        </>
       )}
     </div>
   );
