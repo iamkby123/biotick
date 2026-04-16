@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn, formatMarketCap, formatPrice, formatPercent } from "@/lib/utils";
+import { useAuth } from "@/lib/providers";
 import type { CompanyListResponse } from "@/lib/types";
 
 interface Mover {
@@ -35,6 +36,8 @@ interface CatalystItem {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+
   const { data: topCompanies } = useQuery<CompanyListResponse>({
     queryKey: ["dashboard-top"],
     queryFn: () => fetchAPI("/companies?sort_by=market_cap&sort_dir=desc&per_page=6"),
@@ -50,13 +53,22 @@ export default function DashboardPage() {
     queryFn: () => fetchAPI("/edge/movers"),
   });
 
+  const displayName = user?.user_metadata?.full_name
+    || user?.email?.split("@")[0]
+    || null;
+
   return (
     <div className="space-y-8">
       {/* Hero */}
       <div className="flex items-end justify-between">
         <div>
           <p className="text-sm font-medium text-accent">Dashboard</p>
-          <h1 className="text-3xl font-bold tracking-tight mt-1">Overview</h1>
+          <h1 className="text-3xl font-bold tracking-tight mt-1">
+            {displayName ? `Welcome, ${displayName}` : "Overview"}
+          </h1>
+          {user && (
+            <p className="text-xs text-muted mt-1">{user.email}</p>
+          )}
         </div>
         <Link
           href="/companies"
@@ -84,17 +96,17 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Pipelines"
-          value="644"
+          value={catalysts?.catalysts ? "—" : "—"}
           sublabel="drug programs"
           icon={FlaskConical}
           href="/companies"
         />
         <StatCard
           label="Watchlist"
-          value="0"
-          sublabel="tracked"
+          value={user ? "—" : "0"}
+          sublabel={user ? "tracked" : "sign in to track"}
           icon={Star}
-          href="/watchlist"
+          href={user ? "/watchlist" : "/login"}
         />
       </div>
 
