@@ -1,25 +1,12 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { useCompanies } from "@/hooks/useCompanies";
 import CompanyTable from "@/components/companies/CompanyTable";
 import ScreenerFilters, { getMarketCapBounds } from "@/components/companies/ScreenerFilters";
-import { ChevronLeft, ChevronRight, Loader2, LayoutGrid, List, TrendingUp, TrendingDown } from "lucide-react";
-import { fetchAPI } from "@/lib/api";
-import { cn, formatPrice, formatPercent, formatMarketCap } from "@/lib/utils";
-
-interface Mover {
-  ticker: string;
-  name: string;
-  price: number;
-  change: number;
-  market_cap: number | null;
-}
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 export default function CompaniesPage() {
-  const view = "table";
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [exchange, setExchange] = useState("");
@@ -52,14 +39,7 @@ export default function CompaniesPage() {
     sortBy,
     sortDir,
     page,
-    perPage: view === "heatmap" ? 200 : 50,
-  });
-
-  // Movers data for the sidebar columns
-  const { data: moversData } = useQuery<{ gainers: Mover[]; losers: Mover[] }>({
-    queryKey: ["movers"],
-    queryFn: () => fetchAPI("/edge/movers"),
-    enabled: view === "heatmap",
+    perPage: 50,
   });
 
   const handleSort = (field: string) => {
@@ -70,18 +50,14 @@ export default function CompaniesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-end justify-between">
-        <div>
-          <p className="text-sm font-medium text-accent">Screener</p>
-          <h1 className="text-3xl font-bold tracking-tight mt-1">Biotech Companies</h1>
-          <p className="text-sm text-muted mt-1">
-            {data ? `${data.total.toLocaleString()} companies` : "Loading..."}
-          </p>
-        </div>
+      <div>
+        <p className="text-sm font-medium text-accent">Screener</p>
+        <h1 className="text-3xl font-bold tracking-tight mt-1">Biotech Companies</h1>
+        <p className="text-sm text-muted mt-1">
+          {data ? `${data.total.toLocaleString()} companies` : "Loading..."}
+        </p>
       </div>
 
-      {/* Filters */}
       <ScreenerFilters
         search={search}
         onSearchChange={handleSearchChange}

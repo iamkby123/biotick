@@ -50,7 +50,6 @@ const navSections = [
     label: "Personal",
     items: [
       { href: "/watchlist", label: "Watchlist", icon: Star },
-      { href: "/analyzer", label: "AI Analyzer", icon: Activity },
     ],
   },
 ];
