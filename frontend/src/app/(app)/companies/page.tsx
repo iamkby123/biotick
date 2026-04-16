@@ -2,8 +2,10 @@
 
 import { useState, useCallback } from "react";
 import { useCompanies } from "@/hooks/useCompanies";
+import { usePlan } from "@/hooks/usePlan";
 import CompanyTable from "@/components/companies/CompanyTable";
 import ScreenerFilters, { getMarketCapBounds } from "@/components/companies/ScreenerFilters";
+import { PaywallBanner } from "@/components/PaywallGate";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 export default function CompaniesPage() {
@@ -29,12 +31,16 @@ export default function CompaniesPage() {
     [searchTimeout]
   );
 
+  const { isPro } = usePlan();
   const { min: minMarketCap, max: maxMarketCap } = getMarketCapBounds(marketCapRange);
+
+  // Free users only see large-cap ($10B+)
+  const effectiveMinMcap = !isPro ? Math.max(minMarketCap || 0, 10_000_000_000) : minMarketCap;
 
   const { data, isLoading, error } = useCompanies({
     search: debouncedSearch || undefined,
     exchange: exchange || undefined,
-    minMarketCap,
+    minMarketCap: effectiveMinMcap,
     maxMarketCap,
     sortBy,
     sortDir,
@@ -57,6 +63,8 @@ export default function CompaniesPage() {
           {data ? `${data.total.toLocaleString()} companies` : "Loading..."}
         </p>
       </div>
+
+      {!isPro && <PaywallBanner feature="Small & mid-cap companies ($2-10B, $300M-2B, <$300M)" />}
 
       <ScreenerFilters
         search={search}
