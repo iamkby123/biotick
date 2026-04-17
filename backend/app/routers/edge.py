@@ -220,6 +220,82 @@ async def get_short_interest(ticker: str):
     return result
 
 
+@router.get("/top-shorted")
+async def get_top_shorted(
+    limit: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get top shorted biotech stocks.
+    Queries the top N biotechs by market cap, then fetches short interest from Finnhub.
+    Returns list sorted by short interest ratio (most shorted first).
+    """
+    import os
+    api_key = os.environ.get("FINNHUB_API_KEY", "")
+    if not api_key:
+        return {"stocks": [], "error": "Finnhub API key not configured"}
+
+    cache_key = f"top_shorted:{limit}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    # Get top biotech companies by market cap
+    result = await db.execute(
+        select(Company)
+        .where(
+            Company.sic_code.in_(BIOTECH_SIC_CODES),
+            Company.market_cap.isnot(None),
+        )
+        .order_by(Company.market_cap.desc())
+        .limit(limit)
+    )
+    companies = result.scalars().all()
+
+    # Fetch short interest for each ticker, in parallel batches
+    async def fetch_short(client: httpx.AsyncClient, company: Company) -> dict | None:
+        try:
+            resp = await client.get(
+                "https://finnhub.io/api/v1/stock/short-interest",
+                params={"symbol": company.ticker, "token": api_key},
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            if not isinstance(data, list) or not data:
+                return None
+            latest = data[-1]
+            return {
+                "ticker": company.ticker,
+                "name": company.name,
+                "price": company.price,
+                "market_cap": company.market_cap,
+                "short_interest": latest.get("shortInterest"),
+                "avg_volume": latest.get("avgDailyVolume"),
+                "days_to_cover": latest.get("daysToCover"),
+                "settlement_date": latest.get("settlementDate"),
+            }
+        except Exception:
+            return None
+
+    stocks = []
+    async with httpx.AsyncClient() as client:
+        # Run in batches of 10 to avoid hammering the API
+        batch_size = 10
+        for i in range(0, len(companies), batch_size):
+            batch = companies[i:i + batch_size]
+            results = await asyncio.gather(*[fetch_short(client, c) for c in batch])
+            stocks.extend([r for r in results if r is not None])
+
+    # Sort by days_to_cover descending (most shorted first)
+    stocks.sort(key=lambda s: s.get("days_to_cover") or 0, reverse=True)
+
+    response = {"stocks": stocks, "total": len(stocks)}
+    cache.set(cache_key, response, 3600)  # Cache 1 hour
+    return response
+
+
 @router.get("/movers")
 async def get_top_movers(
     db: AsyncSession = Depends(get_db),

@@ -1,3 +1,7 @@
+import logging
+from datetime import date, timedelta
+
+import httpx
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -7,8 +11,9 @@ from app.database import get_db
 from app.models.company import Company
 from app.schemas.company import CompanyListItem, CompanyListResponse, CompanyDetail
 from app.cache.memory_cache import cache
-from app.config import CACHE_TTL_SCREENER, CACHE_TTL_COMPANY_DETAIL, BIOTECH_SIC_CODES
+from app.config import CACHE_TTL_SCREENER, CACHE_TTL_COMPANY_DETAIL, BIOTECH_SIC_CODES, FINNHUB_API_KEY
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 
@@ -133,3 +138,68 @@ async def get_sectors(db: AsyncSession = Depends(get_db)):
         select(Company.sector).distinct().where(Company.sector.isnot(None))
     )
     return {"sectors": [r[0] for r in result.all()]}
+
+
+@router.get("/{ticker}/news")
+async def get_company_news(
+    ticker: str,
+    days: int = Query(7, ge=1, le=30),
+    limit: int = Query(20, ge=1, le=50),
+):
+    """Get recent news articles for a ticker from Finnhub (last N days)."""
+    ticker = ticker.upper()
+    cache_key = f"company_news:{ticker}:{days}:{limit}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    if not FINNHUB_API_KEY:
+        return {"ticker": ticker, "articles": [], "error": "Finnhub API key not configured"}
+
+    today = date.today()
+    start = (today - timedelta(days=days)).isoformat()
+    end = today.isoformat()
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://finnhub.io/api/v1/company-news",
+                params={
+                    "symbol": ticker,
+                    "from": start,
+                    "to": end,
+                    "token": FINNHUB_API_KEY,
+                },
+            )
+            if resp.status_code != 200:
+                return {"ticker": ticker, "articles": []}
+            raw = resp.json()
+    except Exception as e:
+        logger.error(f"Finnhub news error for {ticker}: {e}")
+        return {"ticker": ticker, "articles": []}
+
+    if not isinstance(raw, list):
+        return {"ticker": ticker, "articles": []}
+
+    articles = []
+    for item in raw[:limit]:
+        articles.append({
+            "id": item.get("id"),
+            "headline": item.get("headline"),
+            "summary": item.get("summary"),
+            "source": item.get("source"),
+            "url": item.get("url"),
+            "image": item.get("image"),
+            "datetime": item.get("datetime"),  # unix timestamp
+            "category": item.get("category"),
+            "related": item.get("related"),
+        })
+
+    response = {
+        "ticker": ticker,
+        "articles": articles,
+        "total": len(articles),
+        "date_range": {"start": start, "end": end},
+    }
+    cache.set(cache_key, response, 900)  # 15 minutes
+    return response

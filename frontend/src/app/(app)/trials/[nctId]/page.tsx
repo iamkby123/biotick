@@ -19,10 +19,13 @@ import {
   FileText,
   Target,
   Beaker,
+  Pill,
+  Octagon,
+  BarChart3,
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { PHASE_COLORS, PHASE_LABELS, STATUS_COLORS, STATUS_LABELS } from "@/lib/constants";
+import { PHASE_COLORS, PHASE_LABELS, STATUS_COLORS, STATUS_LABELS, THERAPEUTIC_AREA_COLORS } from "@/lib/constants";
 
 interface TrialDetail {
   nct_id: string;
@@ -69,6 +72,30 @@ interface TrialDetail {
   url: string;
 }
 
+interface DBTrial {
+  nct_id: string;
+  drug_id: string | null;
+  company_ticker: string | null;
+  why_stopped: string | null;
+  has_results: boolean;
+  results_first_posted: string | null;
+  therapeutic_area: string | null;
+  indication: string | null;
+}
+
+interface DrugInfo {
+  drug_id: string;
+  drug_name: string;
+  company_ticker: string;
+  generic_name: string | null;
+  mechanism: string | null;
+  therapeutic_area: string | null;
+  indication: string | null;
+  highest_phase: string | null;
+  status: string | null;
+  first_approval_date: string | null;
+}
+
 export default function TrialDetailPage({
   params,
 }: {
@@ -79,6 +106,20 @@ export default function TrialDetailPage({
   const { data: trial, isLoading, error } = useQuery<TrialDetail>({
     queryKey: ["trial-detail", nctId],
     queryFn: () => fetchAPI(`/trials/${nctId}/detail`),
+  });
+
+  // Our DB row — has drug_id, why_stopped, has_results
+  const { data: dbTrial } = useQuery<DBTrial>({
+    queryKey: ["trial-db", nctId],
+    queryFn: () => fetchAPI(`/trials/${nctId}`),
+    retry: false,
+  });
+
+  // Linked drug, if we have a drug_id
+  const { data: drug } = useQuery<DrugInfo>({
+    queryKey: ["trial-drug", dbTrial?.drug_id],
+    queryFn: () => fetchAPI(`/drugs/${dbTrial?.drug_id}`),
+    enabled: !!dbTrial?.drug_id,
   });
 
   if (isLoading) {
@@ -152,6 +193,117 @@ export default function TrialDetailPage({
         <StatBox icon={Target} label="Primary Completion" value={trial.primary_completion_date || "N/A"} />
         <StatBox icon={MapPin} label="Locations" value={String(trial.locations_count)} sublabel="sites" />
       </div>
+
+      {/* Why Stopped banner (from our DB) */}
+      {dbTrial?.why_stopped && (
+        <div className="rounded-lg border border-negative/30 bg-negative/5 p-5">
+          <div className="flex items-start gap-3">
+            <Octagon className="w-5 h-5 text-negative shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-negative mb-1">
+                Trial Stopped
+              </h3>
+              <p className="text-sm text-foreground leading-relaxed">{dbTrial.why_stopped}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Results available link */}
+      {dbTrial?.has_results && (
+        <div className="rounded-lg border border-positive/30 bg-positive/5 p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <BarChart3 className="w-5 h-5 text-positive shrink-0" />
+            <div>
+              <p className="text-sm font-semibold">Results Available</p>
+              <p className="text-xs text-muted">
+                {dbTrial.results_first_posted
+                  ? `Results first posted ${dbTrial.results_first_posted}`
+                  : "This trial has posted results on ClinicalTrials.gov"}
+              </p>
+            </div>
+          </div>
+          <a
+            href={`https://clinicaltrials.gov/study/${trial.nct_id}?tab=results`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 rounded-md bg-positive text-black text-xs font-semibold hover:opacity-90 transition flex items-center gap-1.5 shrink-0"
+          >
+            View Results
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      )}
+
+      {/* Linked drug card */}
+      {drug && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 flex items-center gap-2">
+            <Pill className="w-4 h-4" />
+            Drug Program
+          </h3>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <Link
+                href={`/drugs/${drug.drug_id}`}
+                className="text-lg font-bold hover:text-accent transition-colors inline-flex items-center gap-1"
+              >
+                {drug.drug_name}
+                <ExternalLink className="w-3.5 h-3.5 text-muted" />
+              </Link>
+              {drug.generic_name && drug.generic_name !== drug.drug_name && (
+                <p className="text-xs text-muted mt-0.5">Generic: {drug.generic_name}</p>
+              )}
+              <div className="flex items-center gap-2 flex-wrap mt-2">
+                {drug.highest_phase && (
+                  <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium border", PHASE_COLORS[drug.highest_phase] || PHASE_COLORS.PRECLINICAL)}>
+                    {PHASE_LABELS[drug.highest_phase] || drug.highest_phase}
+                  </span>
+                )}
+                {drug.therapeutic_area && (
+                  <span className={cn("px-2 py-0.5 rounded text-[11px]", THERAPEUTIC_AREA_COLORS[drug.therapeutic_area] || THERAPEUTIC_AREA_COLORS.Other)}>
+                    {drug.therapeutic_area}
+                  </span>
+                )}
+                {drug.status && (
+                  <span className="px-2 py-0.5 rounded text-[11px] bg-surface-hover text-muted border border-border">
+                    {drug.status}
+                  </span>
+                )}
+              </div>
+            </div>
+            {drug.company_ticker && (
+              <Link
+                href={`/companies/${drug.company_ticker}`}
+                className="rounded-md border border-border px-3 py-2 hover:border-accent/30 hover:bg-surface-hover transition-all text-center"
+              >
+                <p className="text-[10px] text-muted uppercase font-semibold">Developer</p>
+                <p className="text-sm font-bold font-mono text-accent">{drug.company_ticker}</p>
+              </Link>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mt-4 text-[13px]">
+            {drug.mechanism && (
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted font-semibold">Mechanism</p>
+                <p className="text-sm mt-0.5">{drug.mechanism}</p>
+              </div>
+            )}
+            {drug.indication && (
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted font-semibold">Indication</p>
+                <p className="text-sm mt-0.5">{drug.indication}</p>
+              </div>
+            )}
+            {drug.first_approval_date && (
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted font-semibold">First Approval</p>
+                <p className="text-sm mt-0.5 font-mono">{drug.first_approval_date}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Design notes / potential concerns */}
       {designNotes.length > 0 && (

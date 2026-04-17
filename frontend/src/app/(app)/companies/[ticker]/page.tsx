@@ -64,13 +64,25 @@ interface OptionRow {
   in_the_money: boolean;
 }
 
+interface NewsArticle {
+  id: number | string;
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  image: string;
+  datetime: number;
+  category: string;
+  related: string;
+}
+
 export default function CompanyDetailPage({
   params,
 }: {
   params: Promise<{ ticker: string }>;
 }) {
   const { ticker } = use(params);
-  const [activeTab, setActiveTab] = useState<"overview" | "pipeline" | "trials" | "options" | "filings">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "pipeline" | "trials" | "options" | "filings" | "news">("overview");
 
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ["company", ticker],
@@ -133,6 +145,16 @@ export default function CompanyDetailPage({
     enabled: activeTab === "overview",
   });
 
+  const { data: newsData } = useQuery<{
+    ticker: string;
+    articles: NewsArticle[];
+    total?: number;
+  }>({
+    queryKey: ["company-news", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/news?days=7&limit=20`),
+    enabled: activeTab === "news",
+  });
+
   const _unused_effect = useEffect; // keep import used
 
   if (isLoading) {
@@ -159,6 +181,7 @@ export default function CompanyDetailPage({
     { id: "trials" as const, label: "Clinical Trials", count: trialsData?.total },
     { id: "options" as const, label: "Options Flow" },
     { id: "filings" as const, label: "SEC Filings", count: filingsData?.filings?.length },
+    { id: "news" as const, label: "News" },
   ];
 
   return (
@@ -276,8 +299,92 @@ export default function CompanyDetailPage({
           />
         </>
       )}
+
+      {activeTab === "news" && (
+        <NewsTab articles={newsData?.articles} />
+      )}
     </div>
   );
+}
+
+/* ── News Tab ── */
+function NewsTab({ articles }: { articles: NewsArticle[] | undefined }) {
+  if (articles === undefined) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-5 h-5 animate-spin text-accent" />
+      </div>
+    );
+  }
+
+  if (articles.length === 0) {
+    return <EmptyState text="No recent news found for this ticker" />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted">{articles.length} articles from the last 7 days</p>
+      <div className="space-y-2">
+        {articles.map((a) => (
+          <a
+            key={a.id}
+            href={a.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex gap-4 rounded-lg border border-border p-4 hover:border-accent/30 hover:bg-surface-hover transition-all group"
+          >
+            {a.image && (
+              <div className="shrink-0 w-32 h-20 rounded-md overflow-hidden bg-surface-hover hidden sm:block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={a.image}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  onError={(e) => {
+                    (e.currentTarget.parentElement as HTMLElement).style.display = "none";
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1.5 text-[11px] text-muted">
+                <span className="font-semibold text-accent">{a.source}</span>
+                <span>·</span>
+                <span>{formatArticleDate(a.datetime)}</span>
+                {a.category && (
+                  <>
+                    <span>·</span>
+                    <span className="px-1.5 py-0.5 rounded bg-surface-hover text-[10px] uppercase">{a.category}</span>
+                  </>
+                )}
+              </div>
+              <h3 className="text-sm font-semibold leading-snug group-hover:text-accent transition-colors line-clamp-2">
+                {a.headline}
+              </h3>
+              {a.summary && (
+                <p className="text-xs text-muted mt-1.5 line-clamp-2 leading-relaxed">{a.summary}</p>
+              )}
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 text-muted shrink-0 mt-1" />
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatArticleDate(ts: number): string {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffHours < 1) return "just now";
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString();
 }
 
 /* ── TradingView Chart ── */

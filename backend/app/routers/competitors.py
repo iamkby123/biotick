@@ -13,8 +13,87 @@ from app.database import get_db
 from app.models.drug import Drug
 from app.models.company import Company
 from app.models.trial import Trial
+from app.cache.memory_cache import cache
 
 router = APIRouter(prefix="/api/competitors", tags=["competitors"])
+
+
+@router.get("/indications")
+async def get_indications_matrix(
+    limit: int = Query(30, ge=5, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return a matrix of the top indications by total drug count, grouped by phase.
+    Each row is an indication, each phase column is a drug count. Also includes
+    the number of distinct companies targeting each indication.
+    """
+    cache_key = f"indication_matrix:{limit}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    # Top indications by drug count (excluding nulls / placebos)
+    top_q = await db.execute(
+        select(
+            Drug.indication,
+            func.count(Drug.drug_id).label("cnt"),
+            func.count(func.distinct(Drug.company_ticker)).label("companies"),
+        )
+        .where(
+            Drug.indication.isnot(None),
+            Drug.status != "PLACEBO",
+        )
+        .group_by(Drug.indication)
+        .order_by(func.count(Drug.drug_id).desc())
+        .limit(limit)
+    )
+    top_rows = top_q.all()
+    top_indications = [r[0] for r in top_rows]
+
+    if not top_indications:
+        empty: dict = {"indications": [], "phases": ["PHASE1", "PHASE2", "PHASE3", "PHASE4", "APPROVED"]}
+        cache.set(cache_key, empty, 600)
+        return empty
+
+    # Fetch phase breakdown for these indications
+    phase_q = await db.execute(
+        select(
+            Drug.indication,
+            Drug.highest_phase,
+            func.count(Drug.drug_id).label("cnt"),
+        )
+        .where(
+            Drug.indication.in_(top_indications),
+            Drug.status != "PLACEBO",
+        )
+        .group_by(Drug.indication, Drug.highest_phase)
+    )
+    phase_rows = phase_q.all()
+
+    # Build matrix: indication -> { phase -> count, total, companies }
+    matrix: dict = {}
+    company_lookup = {r[0]: r[2] for r in top_rows}
+    total_lookup = {r[0]: r[1] for r in top_rows}
+    for ind in top_indications:
+        matrix[ind] = {
+            "indication": ind,
+            "total": total_lookup.get(ind, 0),
+            "companies": company_lookup.get(ind, 0),
+            "phases": {},
+        }
+
+    for indication, phase, cnt in phase_rows:
+        if indication in matrix:
+            matrix[indication]["phases"][phase or "UNKNOWN"] = cnt
+
+    phases = ["PHASE1", "PHASE2", "PHASE3", "PHASE4", "APPROVED"]
+    response = {
+        "indications": list(matrix.values()),
+        "phases": phases,
+    }
+    cache.set(cache_key, response, 600)
+    return response
 
 
 @router.get("/drug/{drug_id}")
