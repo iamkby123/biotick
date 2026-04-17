@@ -68,9 +68,27 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Background syncs disabled — they block the single-threaded server
-    # Run syncs manually via /api/sync/* endpoints or locally instead
-    logger.info("Server ready — syncs run via API endpoints, not background scheduler")
+    # Schedule recurring syncs (2-CPU machine can handle these)
+    scheduler.add_job(
+        scheduled_price_update,
+        IntervalTrigger(minutes=30),
+        id="price_update",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_filing_sync,
+        CronTrigger(hour="*/6", minute=30),
+        id="filing_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_trial_catalyst_sync,
+        CronTrigger(hour=5, minute=0),
+        id="trial_catalyst_sync",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info("Scheduler started — prices every 30min, filings every 6h, trials daily")
 
     yield
 
