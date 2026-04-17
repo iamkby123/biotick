@@ -53,6 +53,11 @@ export default function DashboardPage() {
     queryFn: () => fetchAPI("/edge/movers"),
   });
 
+  const { data: drugCount } = useQuery<{ total: number }>({
+    queryKey: ["drug-count"],
+    queryFn: () => fetchAPI("/drugs/count"),
+  });
+
   const displayName = user?.user_metadata?.full_name
     || user?.email?.split("@")[0]
     || null;
@@ -96,7 +101,7 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Pipelines"
-          value={catalysts?.catalysts ? "—" : "—"}
+          value={drugCount?.total?.toLocaleString() || "—"}
           sublabel="drug programs"
           icon={FlaskConical}
           href="/companies"

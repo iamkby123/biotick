@@ -12,6 +12,14 @@ from app.schemas.drug import DrugResponse, TrialResponse, DrugWithTrials
 router = APIRouter(prefix="/api", tags=["drugs", "trials"])
 
 
+@router.get("/drugs/count")
+async def get_drug_count(db: AsyncSession = Depends(get_db)):
+    """Get total number of drugs in the database."""
+    result = await db.execute(select(func.count()).select_from(Drug))
+    total = result.scalar() or 0
+    return {"total": total}
+
+
 @router.get("/companies/{ticker}/pipeline", response_model=list[DrugResponse])
 async def get_company_pipeline(
     ticker: str,
