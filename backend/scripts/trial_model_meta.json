@@ -1,0 +1,94 @@
+{
+  "features": [
+    "phase_ord",
+    "enrollment_log",
+    "has_enrollment",
+    "mcap_log",
+    "has_mcap",
+    "has_revenue",
+    "employees_log",
+    "low_runway",
+    "sponsor_rate",
+    "sponsor_total",
+    "approval_count",
+    "has_sponsor_history",
+    "indication_rate",
+    "indication_sample_size",
+    "planned_duration_days",
+    "area_enc"
+  ],
+  "auc": 0.8817029857244335,
+  "avg_precision": 0.9710731441010367,
+  "cv_auc_mean": 0.8766953418979998,
+  "cv_auc_std": 0.022262351610989144,
+  "training_size": 8511,
+  "test_size": 2128,
+  "success_rate": 0.8247955634928095,
+  "feature_importance": [
+    {
+      "feature": "indication_rate",
+      "importance": 0.23257403075695038
+    },
+    {
+      "feature": "enrollment_log",
+      "importance": 0.16389606893062592
+    },
+    {
+      "feature": "has_enrollment",
+      "importance": 0.1466381847858429
+    },
+    {
+      "feature": "sponsor_rate",
+      "importance": 0.11603135615587234
+    },
+    {
+      "feature": "phase_ord",
+      "importance": 0.06772062927484512
+    },
+    {
+      "feature": "area_enc",
+      "importance": 0.039523638784885406
+    },
+    {
+      "feature": "indication_sample_size",
+      "importance": 0.039369117468595505
+    },
+    {
+      "feature": "planned_duration_days",
+      "importance": 0.03768276795744896
+    },
+    {
+      "feature": "sponsor_total",
+      "importance": 0.03429153189063072
+    },
+    {
+      "feature": "mcap_log",
+      "importance": 0.03258185461163521
+    },
+    {
+      "feature": "approval_count",
+      "importance": 0.03203577548265457
+    },
+    {
+      "feature": "low_runway",
+      "importance": 0.03013676404953003
+    },
+    {
+      "feature": "has_revenue",
+      "importance": 0.02751827985048294
+    },
+    {
+      "feature": "has_mcap",
+      "importance": 0.0
+    },
+    {
+      "feature": "employees_log",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_sponsor_history",
+      "importance": 0.0
+    }
+  ],
+  "trained_at": "2026-04-17T21:23:05.065953"
+}

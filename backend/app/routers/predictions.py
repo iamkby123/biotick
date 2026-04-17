@@ -10,6 +10,19 @@ from app.database import get_db
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
 
 
+@router.get("/model-info")
+async def get_model_info():
+    """Return ML model performance + feature importance."""
+    import json
+    from pathlib import Path
+    meta_path = Path(__file__).parent.parent.parent / "scripts" / "trial_model_meta.json"
+    if not meta_path.exists():
+        return {"trained": False}
+    with open(meta_path) as f:
+        meta = json.load(f)
+    return {"trained": True, **meta}
+
+
 @router.get("/trial/{nct_id}")
 async def get_trial_prediction(nct_id: str, db: AsyncSession = Depends(get_db)):
     """Get Shot on Goal score and red flags for a trial."""

@@ -46,6 +46,18 @@ export default function PredictionsPage() {
   const [minPhase, setMinPhase] = useState<"PHASE1" | "PHASE2" | "PHASE3">("PHASE2");
   const { isPro } = usePlan();
 
+  const { data: modelInfo } = useQuery<{
+    trained: boolean;
+    auc?: number;
+    cv_auc_mean?: number;
+    cv_auc_std?: number;
+    training_size?: number;
+    feature_importance?: Array<{ feature: string; importance: number }>;
+  }>({
+    queryKey: ["model-info"],
+    queryFn: () => fetchAPI("/predictions/model-info"),
+  });
+
   const { data: conviction, isLoading: loading1 } = useQuery<{ trials: TrialPrediction[] }>({
     queryKey: ["high-conviction", minPhase],
     queryFn: () => fetchAPI(`/predictions/high-conviction?min_phase=${minPhase}&limit=50`),
@@ -116,6 +128,64 @@ export default function PredictionsPage() {
           </div>
         )}
       </div>
+
+      {/* Model info card */}
+      {modelInfo?.trained && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-accent mb-3">
+            <Sparkles className="w-3.5 h-3.5" />
+            XGBoost Model
+          </div>
+          <div className="grid grid-cols-4 gap-4 mb-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted">AUC</p>
+              <p className="text-xl font-bold text-positive">{(modelInfo.auc! * 100).toFixed(1)}%</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted">CV AUC</p>
+              <p className="text-xl font-bold">{(modelInfo.cv_auc_mean! * 100).toFixed(1)}%</p>
+              <p className="text-[10px] text-muted">±{(modelInfo.cv_auc_std! * 100).toFixed(1)}%</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted">Training Set</p>
+              <p className="text-xl font-bold">{modelInfo.training_size?.toLocaleString()}</p>
+              <p className="text-[10px] text-muted">historical trials</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted">Top Feature</p>
+              <p className="text-sm font-bold mt-1">
+                {modelInfo.feature_importance?.[0]?.feature.replace(/_/g, " ")}
+              </p>
+              <p className="text-[10px] text-muted">
+                {((modelInfo.feature_importance?.[0]?.importance || 0) * 100).toFixed(0)}% importance
+              </p>
+            </div>
+          </div>
+          {modelInfo.feature_importance && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted mb-2">Feature Importance</p>
+              <div className="space-y-1.5">
+                {modelInfo.feature_importance.slice(0, 8).map((f) => (
+                  <div key={f.feature} className="flex items-center gap-3">
+                    <span className="text-[11px] w-40 shrink-0">
+                      {f.feature.replace(/_/g, " ")}
+                    </span>
+                    <div className="flex-1 h-1.5 bg-surface-hover rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-accent transition-all"
+                        style={{ width: `${f.importance * 400}%`, maxWidth: "100%" }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-muted w-10 text-right">
+                      {(f.importance * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Explanation card */}
       <div className="rounded-lg border border-border bg-surface/30 p-4 text-sm">
