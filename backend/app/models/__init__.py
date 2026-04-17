@@ -5,6 +5,9 @@ from app.models.catalyst import Catalyst
 from app.models.filing import SECFiling, InsiderTrade
 from app.models.watchlist import WatchlistItem
 from app.models.sync_log import SyncLog
+from app.models.institutional import InstitutionalHolding
+from app.models.etf import ETFHolding
+from app.models.patent import Patent
 
 __all__ = [
     "Company",
@@ -16,4 +19,7 @@ __all__ = [
     "InsiderTrade",
     "WatchlistItem",
     "SyncLog",
+    "InstitutionalHolding",
+    "ETFHolding",
+    "Patent",
 ]

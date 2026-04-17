@@ -76,13 +76,49 @@ interface NewsArticle {
   related: string;
 }
 
+interface InstitutionalHoldingRow {
+  id: number;
+  ticker: string;
+  fund_name: string;
+  fund_cik: string;
+  shares: number | null;
+  value: number | null;
+  quarter_end: string | null;
+  filing_date: string | null;
+  edgar_url: string;
+}
+
+interface ETFHoldingRow {
+  id: number;
+  etf_ticker: string;
+  ticker: string;
+  weight: number | null;
+  shares: number | null;
+  market_value: number | null;
+  updated_at: string | null;
+}
+
+interface PatentRow {
+  id: number;
+  patent_number: string;
+  title: string | null;
+  assignee_name: string | null;
+  company_ticker: string | null;
+  filing_date: string | null;
+  grant_date: string | null;
+  expiration_date: string | null;
+  abstract: string | null;
+  patent_type: string | null;
+  uspto_url: string | null;
+}
+
 export default function CompanyDetailPage({
   params,
 }: {
   params: Promise<{ ticker: string }>;
 }) {
   const { ticker } = use(params);
-  const [activeTab, setActiveTab] = useState<"overview" | "pipeline" | "trials" | "options" | "filings" | "news">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "pipeline" | "trials" | "options" | "filings" | "news" | "patents">("overview");
 
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ["company", ticker],
@@ -155,6 +191,41 @@ export default function CompanyDetailPage({
     enabled: activeTab === "news",
   });
 
+  const { data: institutionalData } = useQuery<{
+    ticker: string;
+    holdings: InstitutionalHoldingRow[];
+    total: number;
+    total_value: number;
+    total_shares: number;
+  }>({
+    queryKey: ["institutional", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/institutional`),
+    enabled: activeTab === "overview",
+  });
+
+  const { data: etfData } = useQuery<{
+    ticker: string;
+    etfs: ETFHoldingRow[];
+    total: number;
+  }>({
+    queryKey: ["etfs", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/etfs`),
+    enabled: activeTab === "overview",
+  });
+
+  const { data: patentsData } = useQuery<{
+    ticker: string;
+    patents: PatentRow[];
+    total: number;
+    page: number;
+    per_page: number;
+    total_pages: number;
+  }>({
+    queryKey: ["patents", ticker],
+    queryFn: () => fetchAPI(`/companies/${ticker}/patents?per_page=20`),
+    enabled: activeTab === "patents",
+  });
+
   const _unused_effect = useEffect; // keep import used
 
   if (isLoading) {
@@ -182,6 +253,7 @@ export default function CompanyDetailPage({
     { id: "options" as const, label: "Options Flow" },
     { id: "filings" as const, label: "SEC Filings", count: filingsData?.filings?.length },
     { id: "news" as const, label: "News" },
+    { id: "patents" as const, label: "Patents", count: patentsData?.total },
   ];
 
   return (
@@ -272,6 +344,8 @@ export default function CompanyDetailPage({
           filingsCount={filingsData?.filings?.length || 0}
           competitors={competitorData}
           shortInterest={shortData}
+          institutional={institutionalData}
+          etfs={etfData}
         />
       )}
 
@@ -302,6 +376,10 @@ export default function CompanyDetailPage({
 
       {activeTab === "news" && (
         <NewsTab articles={newsData?.articles} />
+      )}
+
+      {activeTab === "patents" && (
+        <PatentsTab patents={patentsData?.patents} total={patentsData?.total || 0} />
       )}
     </div>
   );
@@ -467,6 +545,8 @@ function OverviewTab({
   filingsCount,
   competitors,
   shortInterest,
+  institutional,
+  etfs,
 }: {
   company: Company;
   pipeline: Drug[];
@@ -475,6 +555,8 @@ function OverviewTab({
   filingsCount: number;
   competitors: { therapeutic_areas: string[]; competitors: Array<{ ticker: string; name: string; price: number | null; market_cap: number | null; pipeline_size: number }> } | undefined;
   shortInterest: { short_interest: Array<{ date: string; short_interest: number; days_to_cover: number }>; institutional_ownership: Array<{ name: string; shares: number; change: number }>; insider_sentiment: Array<{ month: string; change: number; mspr: number }> } | undefined;
+  institutional: { ticker: string; holdings: InstitutionalHoldingRow[]; total: number; total_value: number; total_shares: number } | undefined;
+  etfs: { ticker: string; etfs: ETFHoldingRow[]; total: number } | undefined;
 }) {
   // Count drugs by phase
   const phaseCount: Record<string, number> = {};
@@ -746,6 +828,12 @@ function OverviewTab({
           </div>
         </div>
       )}
+
+      {/* Smart Money Holders (13F) */}
+      <SmartMoneySection institutional={institutional} />
+
+      {/* ETF Membership */}
+      <ETFMembershipSection etfs={etfs} />
 
       {/* Institutional Ownership */}
       {shortInterest && shortInterest.institutional_ownership.length > 0 && (
@@ -1252,6 +1340,172 @@ function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-lg border border-border border-dashed p-12 text-center">
       <p className="text-sm text-muted">{text}</p>
+    </div>
+  );
+}
+
+/* ── Smart Money Holders (13F) ── */
+function SmartMoneySection({
+  institutional,
+}: {
+  institutional: { ticker: string; holdings: InstitutionalHoldingRow[]; total: number; total_value: number; total_shares: number } | undefined;
+}) {
+  if (!institutional || institutional.holdings.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-border p-5">
+      <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-1">Smart Money Holders</h3>
+      <p className="text-[11px] text-muted mb-3">
+        Specialist biotech funds reporting this position in their latest 13F filing
+        {" · "}
+        <span className="font-mono">{formatMarketCap(institutional.total_value)}</span> total
+      </p>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="bg-surface/50 border-b border-border">
+              <th className="text-left px-4 py-2 text-[10px] font-semibold uppercase text-muted">Fund</th>
+              <th className="text-right px-4 py-2 text-[10px] font-semibold uppercase text-muted">Position</th>
+              <th className="text-right px-4 py-2 text-[10px] font-semibold uppercase text-muted">Shares</th>
+              <th className="text-right px-4 py-2 text-[10px] font-semibold uppercase text-muted">Quarter</th>
+            </tr>
+          </thead>
+          <tbody>
+            {institutional.holdings.map((h) => (
+              <tr key={h.id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
+                <td className="px-4 py-2.5">
+                  <a
+                    href={h.edgar_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 font-medium text-[12px] text-accent hover:underline"
+                  >
+                    {h.fund_name}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <p className="text-[10px] text-muted font-mono">CIK {h.fund_cik}</p>
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono">{h.value ? formatMarketCap(h.value) : "N/A"}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-muted">{h.shares ? formatNumber(Math.round(h.shares)) : "N/A"}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-muted text-[12px]">{h.quarter_end || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── ETF Membership ── */
+const ETF_COLORS: Record<string, string> = {
+  XBI: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  IBB: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+  LABU: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+  SBIO: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+};
+
+const ETF_NAMES: Record<string, string> = {
+  XBI: "SPDR S&P Biotech",
+  IBB: "iShares Biotechnology",
+  LABU: "Direxion Daily S&P Biotech Bull 3X",
+  SBIO: "ALPS Medical Breakthroughs",
+};
+
+function ETFMembershipSection({
+  etfs,
+}: {
+  etfs: { ticker: string; etfs: ETFHoldingRow[]; total: number } | undefined;
+}) {
+  if (!etfs || etfs.etfs.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-border p-5">
+      <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-1">ETF Membership</h3>
+      <p className="text-[11px] text-muted mb-3">Biotech ETFs holding this stock with their weight</p>
+      <div className="flex flex-wrap gap-2">
+        {etfs.etfs.map((e) => {
+          const colorClass = ETF_COLORS[e.etf_ticker] || "bg-surface-hover text-foreground border-border";
+          return (
+            <div
+              key={e.id}
+              className={cn("inline-flex items-center gap-2 rounded-md border px-3 py-1.5", colorClass)}
+            >
+              <span className="font-mono font-bold text-[12px]">{e.etf_ticker}</span>
+              <span className="text-[10px] opacity-70">{ETF_NAMES[e.etf_ticker] || ""}</span>
+              <span className="font-mono font-semibold text-[12px] ml-1">
+                {e.weight !== null ? `${e.weight.toFixed(2)}%` : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Patents Tab ── */
+function PatentsTab({ patents, total }: { patents: PatentRow[] | undefined; total: number }) {
+  if (patents === undefined) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-5 h-5 animate-spin text-accent" />
+      </div>
+    );
+  }
+
+  if (patents.length === 0) {
+    return <EmptyState text="No patent data available yet." />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted">{total} patents found</p>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-surface/50 border-b border-border">
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Title</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Patent #</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Granted</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Expires</th>
+            </tr>
+          </thead>
+          <tbody>
+            {patents.map((p) => (
+              <tr key={p.id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
+                <td className="px-4 py-3 max-w-[440px]">
+                  <p className="text-[12px] font-medium line-clamp-2">{p.title || "—"}</p>
+                  {p.assignee_name && (
+                    <p className="text-[10px] text-muted mt-0.5 truncate">{p.assignee_name}</p>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {p.uspto_url ? (
+                    <a
+                      href={p.uspto_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-[12px] text-accent hover:underline"
+                    >
+                      US{p.patent_number}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <span className="font-mono text-[12px] text-muted">{p.patent_number}</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 font-mono text-[12px] text-muted">{p.grant_date || "—"}</td>
+                <td className="px-4 py-3 font-mono text-[12px] text-muted">{p.expiration_date || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
