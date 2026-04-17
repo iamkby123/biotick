@@ -20,6 +20,7 @@ import {
   Pill,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/providers";
 
 const STRIPE_PRO_URL = "https://buy.stripe.com/4gM14n9m1914cGm5lq73G02";
 
@@ -42,6 +43,8 @@ export default function LandingPage() {
 /* ── Navbar ── */
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const { user, loading } = useAuth();
+
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handler);
@@ -70,12 +73,20 @@ function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href="/login" className="text-sm text-muted hover:text-foreground transition hidden sm:block">
-            Log In
-          </Link>
-          <Link href="/signup" className="px-4 py-2 rounded-md bg-accent text-black text-sm font-semibold hover:bg-accent-hover transition">
-            Get Started
-          </Link>
+          {loading ? null : user ? (
+            <Link href="/dashboard" className="px-4 py-2 rounded-md bg-accent text-black text-sm font-semibold hover:bg-accent-hover transition">
+              Go to Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link href="/login" className="text-sm text-muted hover:text-foreground transition hidden sm:block">
+                Log In
+              </Link>
+              <Link href="/signup" className="px-4 py-2 rounded-md bg-accent text-black text-sm font-semibold hover:bg-accent-hover transition">
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </nav>
@@ -96,6 +107,7 @@ const CHART_PATHS = [
 
 /* ── Hero with biotech background ── */
 function Hero() {
+  const { user } = useAuth();
   return (
     <section className="relative overflow-hidden min-h-[85vh] flex items-center">
       {/* Animated background */}
@@ -153,7 +165,7 @@ function Hero() {
             href="/dashboard"
             className="group px-8 py-4 rounded-xl bg-accent text-black font-bold text-[15px] hover:bg-accent-hover transition-all hover:shadow-lg hover:shadow-accent/20 flex items-center gap-2"
           >
-            Start Free
+            {user ? "Go to Dashboard" : "Start Free"}
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Link>
           <a
