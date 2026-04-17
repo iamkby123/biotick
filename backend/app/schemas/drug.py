@@ -38,6 +38,8 @@ class TrialResponse(BaseModel):
     study_type: str | None = None
     results_first_posted: date | None = None
     last_update_posted: date | None = None
+    why_stopped: str | None = None
+    has_results: bool = False
 
     class Config:
         from_attributes = True

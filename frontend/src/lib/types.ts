@@ -74,6 +74,8 @@ export interface Trial {
   study_type: string | null;
   results_first_posted: string | null;
   last_update_posted: string | null;
+  why_stopped?: string | null;
+  has_results?: boolean;
 }
 
 export interface DrugWithTrials extends Drug {

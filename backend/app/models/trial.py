@@ -28,6 +28,8 @@ class Trial(Base):
     study_type: Mapped[str | None] = mapped_column(String(30))
     results_first_posted: Mapped[date | None] = mapped_column(Date)
     last_update_posted: Mapped[date | None] = mapped_column(Date)
+    why_stopped: Mapped[str | None] = mapped_column(String(2000))
+    has_results: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

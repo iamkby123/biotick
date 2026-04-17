@@ -748,59 +748,74 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
           <tbody>
             {trials.map((t) => {
               const isCompleted = t.overall_status === "COMPLETED" || t.overall_status === "TERMINATED";
-              const hasResults = !!t.results_first_posted;
+              const isTerminated = t.overall_status === "TERMINATED" || t.overall_status === "WITHDRAWN" || t.overall_status === "SUSPENDED";
+              const hasResults = !!t.results_first_posted || !!t.has_results;
 
               return (
-                <tr key={t.nct_id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
-                  <td className="px-4 py-3">
-                    <Link href={`/trials/${t.nct_id}`}
-                      className="text-accent hover:underline text-[12px] font-mono">
-                      {t.nct_id}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link href={`/trials/${t.nct_id}`} className="text-[12px] hover:text-accent transition-colors max-w-[280px] truncate block">
-                      {t.title}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    {t.phase && (
-                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium border", PHASE_COLORS[t.phase] || PHASE_COLORS.PRECLINICAL)}>
-                        {PHASE_LABELS[t.phase] || t.phase}
+                <>
+                  <tr key={t.nct_id} className={cn("border-b border-border hover:bg-surface/80 transition-colors", t.why_stopped && "border-b-0")}>
+                    <td className="px-4 py-3">
+                      <Link href={`/trials/${t.nct_id}`}
+                        className="text-accent hover:underline text-[12px] font-mono">
+                        {t.nct_id}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link href={`/trials/${t.nct_id}`} className="text-[12px] hover:text-accent transition-colors max-w-[280px] truncate block">
+                        {t.title}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      {t.phase && (
+                        <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium border", PHASE_COLORS[t.phase] || PHASE_COLORS.PRECLINICAL)}>
+                          {PHASE_LABELS[t.phase] || t.phase}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={cn("text-[11px] font-medium", STATUS_COLORS[t.overall_status || ""] || "text-muted")}>
+                        {STATUS_LABELS[t.overall_status || ""] || t.overall_status}
                       </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={cn("text-[11px] font-medium", STATUS_COLORS[t.overall_status || ""] || "text-muted")}>
-                      {STATUS_LABELS[t.overall_status || ""] || t.overall_status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="text-[11px] font-mono text-muted">
-                      {t.start_date && <span>{t.start_date}</span>}
-                      {t.primary_completion_date && <span className="text-foreground"> → {t.primary_completion_date}</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {hasResults ? (
-                      <a
-                        href={`https://clinicaltrials.gov/study/${t.nct_id}?tab=results`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-positive/10 text-positive hover:bg-positive/20 transition-colors"
-                      >
-                        View Results
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    ) : isCompleted ? (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-warning/10 text-warning">
-                        Pending
-                      </span>
-                    ) : (
-                      <span className="text-[11px] text-muted">—</span>
-                    )}
-                  </td>
-                </tr>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-[11px] font-mono text-muted">
+                        {t.start_date && <span>{t.start_date}</span>}
+                        {t.primary_completion_date && <span className="text-foreground"> → {t.primary_completion_date}</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {hasResults ? (
+                        <a
+                          href={`https://clinicaltrials.gov/study/${t.nct_id}?tab=results`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-positive/10 text-positive hover:bg-positive/20 transition-colors"
+                        >
+                          View Results
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : isCompleted ? (
+                        <span className="text-[11px] px-2 py-0.5 rounded bg-warning/10 text-warning">
+                          Pending
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                  {t.why_stopped && (
+                    <tr key={`${t.nct_id}-reason`} className="border-b border-border bg-negative/[0.03]">
+                      <td colSpan={6} className="px-4 pb-3 pt-0">
+                        <div className="flex items-start gap-2 text-[11px]">
+                          <span className={cn("font-semibold uppercase tracking-wider shrink-0", isTerminated ? "text-negative" : "text-muted")}>
+                            {isTerminated ? "Stopped:" : "Note:"}
+                          </span>
+                          <span className="text-muted italic">{t.why_stopped}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               );
             })}
           </tbody>
