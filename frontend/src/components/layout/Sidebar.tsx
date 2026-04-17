@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Search,
@@ -20,6 +21,8 @@ import {
   Users,
   Grid3x3,
   Target,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, useAuth } from "@/lib/providers";
@@ -62,26 +65,62 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Persist collapsed state
+  useEffect(() => {
+    const saved = localStorage.getItem("sidebar-collapsed");
+    if (saved === "true") setCollapsed(true);
+  }, []);
+
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem("sidebar-collapsed", String(next));
+  };
 
   return (
-    <aside className="w-[220px] bg-surface/50 backdrop-blur-sm border-r border-border flex flex-col shrink-0 h-screen sticky top-0">
+    <aside
+      className={cn(
+        "relative bg-surface/50 backdrop-blur-sm border-r border-border flex flex-col shrink-0 h-screen sticky top-0 transition-all duration-200",
+        collapsed ? "w-[60px]" : "w-[220px]"
+      )}
+    >
       {/* Logo */}
-      <div className="px-5 h-16 flex items-center border-b border-border">
+      <div className={cn(
+        "h-16 flex items-center border-b border-border",
+        collapsed ? "justify-center px-0" : "px-5"
+      )}>
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center">
+          <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center shrink-0">
             <Activity className="w-4 h-4 text-black" />
           </div>
-          <span className="font-bold text-[15px] tracking-tight">Biotick</span>
+          {!collapsed && <span className="font-bold text-[15px] tracking-tight">Biotick</span>}
         </Link>
       </div>
 
+      {/* Toggle button — floats on the right edge */}
+      <button
+        onClick={toggleCollapsed}
+        className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-surface border border-border text-muted hover:text-foreground hover:border-accent/50 flex items-center justify-center shadow-sm transition-colors z-10"
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+      </button>
+
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+      <nav className={cn(
+        "flex-1 py-2 space-y-1 overflow-y-auto overflow-x-hidden",
+        collapsed ? "px-1.5" : "px-3"
+      )}>
         {navSections.map((section) => (
           <div key={section.label}>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-muted/50 px-3 pt-3 pb-1">
-              {section.label}
-            </p>
+            {!collapsed && (
+              <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-muted/50 px-3 pt-3 pb-1">
+                {section.label}
+              </p>
+            )}
+            {collapsed && <div className="h-2" />}
             {section.items.map((item) => {
               const isActive =
                 pathname === item.href ||
@@ -92,15 +131,20 @@ export default function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  title={collapsed ? item.label : undefined}
                   className={cn(
-                    "flex items-center gap-2.5 px-3 py-[7px] rounded-md text-[13px] font-medium transition-all duration-100",
+                    "flex items-center rounded-md text-[13px] font-medium transition-all duration-100 group",
+                    collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-3 py-[7px]",
                     isActive
                       ? "bg-accent/15 text-accent"
                       : "text-muted hover:text-foreground hover:bg-surface-hover"
                   )}
                 >
-                  <Icon className={cn("w-3.5 h-3.5", isActive ? "text-accent" : "text-muted")} />
-                  {item.label}
+                  <Icon className={cn(
+                    collapsed ? "w-4 h-4" : "w-3.5 h-3.5",
+                    isActive ? "text-accent" : "text-muted"
+                  )} />
+                  {!collapsed && item.label}
                 </Link>
               );
             })}
@@ -109,29 +153,44 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom */}
-      <div className="px-3 py-3 border-t border-border space-y-1">
+      <div className={cn(
+        "py-3 border-t border-border space-y-1",
+        collapsed ? "px-1.5" : "px-3"
+      )}>
         <button
           onClick={toggleTheme}
-          className="flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-muted hover:text-foreground hover:bg-surface-hover w-full transition-all duration-100"
+          title={collapsed ? (theme === "dark" ? "Light mode" : "Dark mode") : undefined}
+          className={cn(
+            "flex items-center rounded-md text-[13px] text-muted hover:text-foreground hover:bg-surface-hover w-full transition-all duration-100",
+            collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-3 py-2"
+          )}
         >
-          {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          {theme === "dark" ? "Light mode" : "Dark mode"}
+          {theme === "dark" ? <Sun className={collapsed ? "w-4 h-4" : "w-3.5 h-3.5"} /> : <Moon className={collapsed ? "w-4 h-4" : "w-3.5 h-3.5"} />}
+          {!collapsed && (theme === "dark" ? "Light mode" : "Dark mode")}
         </button>
         {loading ? null : user ? (
           <button
             onClick={signOut}
-            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-muted hover:text-foreground hover:bg-surface-hover w-full transition-all duration-100"
+            title={collapsed ? "Sign Out" : undefined}
+            className={cn(
+              "flex items-center rounded-md text-[13px] text-muted hover:text-foreground hover:bg-surface-hover w-full transition-all duration-100",
+              collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-3 py-2"
+            )}
           >
-            <LogOut className="w-3.5 h-3.5" />
-            Sign Out
+            <LogOut className={collapsed ? "w-4 h-4" : "w-3.5 h-3.5"} />
+            {!collapsed && "Sign Out"}
           </button>
         ) : (
           <Link
             href="/login"
-            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-accent hover:bg-accent/10 w-full transition-all duration-100"
+            title={collapsed ? "Sign In" : undefined}
+            className={cn(
+              "flex items-center rounded-md text-[13px] text-accent hover:bg-accent/10 w-full transition-all duration-100",
+              collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-3 py-2"
+            )}
           >
-            <LogIn className="w-3.5 h-3.5" />
-            Sign In
+            <LogIn className={collapsed ? "w-4 h-4" : "w-3.5 h-3.5"} />
+            {!collapsed && "Sign In"}
           </Link>
         )}
       </div>
