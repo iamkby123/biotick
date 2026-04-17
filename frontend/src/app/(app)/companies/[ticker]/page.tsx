@@ -103,9 +103,10 @@ export default function CompanyDetailPage({
   });
 
   const { data: optionsVolume } = useQuery<{
-    data: Array<{ expiration: string; call_volume: number; put_volume: number }>;
+    data: Array<{ expiration: string; call_volume: number; put_volume: number; call_iv: number; put_iv: number; avg_iv: number }>;
     total_call_volume: number;
     total_put_volume: number;
+    avg_iv?: number;
     put_call_ratio: number;
   }>({
     queryKey: ["options-volume", ticker],
@@ -812,9 +813,10 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
 /* ── Options Flow Tab ── */
 function OptionsFlowTab({ data }: {
   data: {
-    data: Array<{ expiration: string; call_volume: number; put_volume: number }>;
+    data: Array<{ expiration: string; call_volume: number; put_volume: number; call_iv: number; put_iv: number; avg_iv: number }>;
     total_call_volume: number;
     total_put_volume: number;
+    avg_iv?: number;
     put_call_ratio: number;
   } | undefined;
 }) {
@@ -830,12 +832,18 @@ function OptionsFlowTab({ data }: {
     Puts: d.put_volume,
   }));
 
+  const ivChartData = data.data.map((d) => ({
+    date: d.expiration.slice(5),
+    "Call IV": d.call_iv || null,
+    "Put IV": d.put_iv || null,
+  }));
+
   const totalVol = data.total_call_volume + data.total_put_volume;
 
   return (
     <div className="space-y-6">
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="rounded-lg border border-border p-4">
           <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Call Volume</p>
           <p className="text-xl font-bold text-positive">{data.total_call_volume.toLocaleString()}</p>
@@ -850,7 +858,16 @@ function OptionsFlowTab({ data }: {
             {data.put_call_ratio}
           </p>
           <p className="text-[10px] text-muted mt-0.5">
-            {data.put_call_ratio > 1.2 ? "Bearish sentiment" : data.put_call_ratio < 0.8 ? "Bullish sentiment" : "Neutral"}
+            {data.put_call_ratio > 1.2 ? "Bearish" : data.put_call_ratio < 0.8 ? "Bullish" : "Neutral"}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Avg IV</p>
+          <p className={cn("text-xl font-bold", (data.avg_iv || 0) > 80 ? "text-warning" : (data.avg_iv || 0) > 40 ? "text-accent" : "text-muted")}>
+            {data.avg_iv ? `${data.avg_iv}%` : "--"}
+          </p>
+          <p className="text-[10px] text-muted mt-0.5">
+            {(data.avg_iv || 0) > 80 ? "Very volatile" : (data.avg_iv || 0) > 40 ? "Elevated" : "Normal"}
           </p>
         </div>
       </div>
@@ -898,6 +915,60 @@ function OptionsFlowTab({ data }: {
               strokeWidth={2}
               dot={{ r: 3, fill: "#ef4444" }}
               activeDot={{ r: 5 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Implied Volatility Chart */}
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-1">
+          Implied Volatility Term Structure
+        </h3>
+        <p className="text-[11px] text-muted mb-4">
+          Higher IV at near expirations suggests imminent catalyst expectations
+        </p>
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={ivChartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 11, fill: "var(--color-muted)" }}
+              axisLine={{ stroke: "var(--color-border)" }}
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: "var(--color-muted)" }}
+              axisLine={{ stroke: "var(--color-border)" }}
+              tickFormatter={(v: number) => `${v}%`}
+              domain={[0, 'auto']}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "8px",
+                fontSize: 12,
+              }}
+              formatter={(value: number) => [`${value}%`, "IV"]}
+            />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Line
+              type="monotone"
+              dataKey="Call IV"
+              stroke="#22c55e"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "#22c55e" }}
+              activeDot={{ r: 5 }}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="Put IV"
+              stroke="#ef4444"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "#ef4444" }}
+              activeDot={{ r: 5 }}
+              connectNulls
             />
           </LineChart>
         </ResponsiveContainer>
