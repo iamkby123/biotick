@@ -27,6 +27,14 @@ export default function DrugDetailPage({
     queryFn: () => fetchAPI(`/drugs/${drugId}`),
   });
 
+  const { data: competitors } = useQuery<{
+    competitors: Array<{ drug_id: string; drug_name: string; company_ticker: string; company_name: string | null; highest_phase: string | null; indication: string | null; mechanism: string | null }>;
+  }>({
+    queryKey: ["drug-competitors", drugId],
+    queryFn: () => fetchAPI(`/competitors/drug/${drugId}`),
+    enabled: !!drug,
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -137,6 +145,58 @@ export default function DrugDetailPage({
           })}
         </div>
       </div>
+
+      {/* Competing Drugs */}
+      {competitors && competitors.competitors.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+            <FlaskConical className="w-5 h-5 text-warning" />
+            Competing Drugs
+            <span className="text-sm text-muted font-normal">
+              ({competitors.competitors.length} targeting {drug.indication || "similar indications"})
+            </span>
+          </h2>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface/50 border-b border-border">
+                  <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Drug</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Company</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Phase</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Indication</th>
+                </tr>
+              </thead>
+              <tbody>
+                {competitors.competitors.slice(0, 20).map((c) => (
+                  <tr key={c.drug_id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
+                    <td className="px-4 py-3">
+                      <Link href={`/drugs/${c.drug_id}`} className="text-[13px] font-medium hover:text-accent transition-colors">
+                        {c.drug_name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link href={`/companies/${c.company_ticker}`} className="text-accent hover:underline text-[12px] font-semibold">
+                        {c.company_ticker}
+                      </Link>
+                      {c.company_name && (
+                        <span className="text-xs text-muted ml-2">{c.company_name.slice(0, 20)}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.highest_phase && (
+                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-medium border", PHASE_COLORS[c.highest_phase] || PHASE_COLORS.PRECLINICAL)}>
+                          {PHASE_LABELS[c.highest_phase] || c.highest_phase}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted max-w-[300px] truncate">{c.indication || "--"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Trials */}
       <div>

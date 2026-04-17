@@ -46,6 +46,10 @@ class CompanyDetail(CompanyBase):
     fifty_two_week_low: float | None = None
     avg_volume: int | None = None
     shares_outstanding: float | None = None
+    # Cash runway
+    cash_and_equivalents: float | None = None
+    annual_burn_rate: float | None = None
+    runway_months: int | None = None
     # Dates
     founded_year: str | None = None
     ipo_date: str | None = None

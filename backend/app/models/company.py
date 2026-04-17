@@ -37,6 +37,10 @@ class Company(Base):
     fifty_two_week_low: Mapped[float | None] = mapped_column(Float)
     avg_volume: Mapped[int | None] = mapped_column(Integer)
     shares_outstanding: Mapped[float | None] = mapped_column(Float)
+    # Cash runway
+    cash_and_equivalents: Mapped[float | None] = mapped_column(Float)
+    annual_burn_rate: Mapped[float | None] = mapped_column(Float)
+    runway_months: Mapped[int | None] = mapped_column(Integer)
     # Dates
     founded_year: Mapped[str | None] = mapped_column(String(10))
     ipo_date: Mapped[str | None] = mapped_column(String(20))

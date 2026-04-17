@@ -517,6 +517,50 @@ function OverviewTab({
         />
       </div>
 
+      {/* Cash Runway & Dilution Risk */}
+      {(company.cash_and_equivalents !== null || company.runway_months !== null) && (
+        <div className="rounded-lg border border-border p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Cash & Runway</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted">Cash</p>
+              <p className="text-xl font-bold mt-1">
+                {company.cash_and_equivalents ? formatMarketCap(company.cash_and_equivalents) : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted">Annual Burn</p>
+              <p className={cn("text-xl font-bold mt-1", company.annual_burn_rate && company.annual_burn_rate < 0 ? "text-negative" : "text-muted")}>
+                {company.annual_burn_rate ? formatMarketCap(Math.abs(company.annual_burn_rate)) : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted">Runway</p>
+              {company.runway_months === null ? (
+                <p className="text-xl font-bold mt-1 text-muted">—</p>
+              ) : company.runway_months >= 999 ? (
+                <p className="text-xl font-bold mt-1 text-positive">∞ Profitable</p>
+              ) : (
+                <>
+                  <p className={cn("text-xl font-bold mt-1",
+                    company.runway_months < 6 ? "text-negative" :
+                    company.runway_months < 12 ? "text-warning" :
+                    company.runway_months < 24 ? "text-accent" : "text-positive"
+                  )}>
+                    {company.runway_months}mo
+                  </p>
+                  <p className="text-[10px] text-muted mt-0.5">
+                    {company.runway_months < 6 ? "Critical — likely dilution soon" :
+                     company.runway_months < 12 ? "Low — watch for financing" :
+                     company.runway_months < 24 ? "Moderate" : "Strong"}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Company Info + Financials */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Key Financials */}

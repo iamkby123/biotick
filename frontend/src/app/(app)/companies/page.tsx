@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useCompanies } from "@/hooks/useCompanies";
 import { usePlan } from "@/hooks/usePlan";
 import CompanyTable from "@/components/companies/CompanyTable";
-import ScreenerFilters, { getMarketCapBounds } from "@/components/companies/ScreenerFilters";
+import ScreenerFilters, { getMarketCapBounds, getRunwayBounds } from "@/components/companies/ScreenerFilters";
 import { PaywallBanner } from "@/components/PaywallGate";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
@@ -13,6 +13,10 @@ export default function CompaniesPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [exchange, setExchange] = useState("");
   const [marketCapRange, setMarketCapRange] = useState("");
+  const [runwayRange, setRunwayRange] = useState("");
+  const [highestPhase, setHighestPhase] = useState("");
+  const [catalystDays, setCatalystDays] = useState("");
+  const [profitability, setProfitability] = useState("");
   const [sortBy, setSortBy] = useState("market_cap");
   const [sortDir, setSortDir] = useState("desc");
   const [page, setPage] = useState(1);
@@ -33,6 +37,7 @@ export default function CompaniesPage() {
 
   const { isPro } = usePlan();
   const { min: minMarketCap, max: maxMarketCap } = getMarketCapBounds(marketCapRange);
+  const { min: minRunway, max: maxRunway } = getRunwayBounds(runwayRange);
 
   // Free users only see large-cap ($10B+)
   const effectiveMinMcap = !isPro ? Math.max(minMarketCap || 0, 10_000_000_000) : minMarketCap;
@@ -42,6 +47,11 @@ export default function CompaniesPage() {
     exchange: exchange || undefined,
     minMarketCap: effectiveMinMcap,
     maxMarketCap,
+    minRunway,
+    maxRunway,
+    highestPhase: highestPhase || undefined,
+    profitability: profitability || undefined,
+    hasCatalystDays: catalystDays ? parseInt(catalystDays) : undefined,
     sortBy,
     sortDir,
     page,
@@ -73,6 +83,14 @@ export default function CompaniesPage() {
         onExchangeChange={(v) => { setExchange(v); setPage(1); }}
         marketCapRange={marketCapRange}
         onMarketCapRangeChange={(v) => { setMarketCapRange(v); setPage(1); }}
+        runway={runwayRange}
+        onRunwayChange={(v) => { setRunwayRange(v); setPage(1); }}
+        highestPhase={highestPhase}
+        onHighestPhaseChange={(v) => { setHighestPhase(v); setPage(1); }}
+        catalyst={catalystDays}
+        onCatalystChange={(v) => { setCatalystDays(v); setPage(1); }}
+        profitability={profitability}
+        onProfitabilityChange={(v) => { setProfitability(v); setPage(1); }}
       />
 
       {isLoading ? (

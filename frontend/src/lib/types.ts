@@ -29,6 +29,9 @@ export interface Company {
   fifty_two_week_low: number | null;
   avg_volume: number | null;
   shares_outstanding: number | null;
+  cash_and_equivalents: number | null;
+  annual_burn_rate: number | null;
+  runway_months: number | null;
   // Dates
   founded_year: string | null;
   ipo_date: string | null;

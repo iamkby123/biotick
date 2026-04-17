@@ -25,6 +25,12 @@ async def list_companies(
     max_market_cap: float | None = Query(None),
     sector: str | None = Query(None),
     therapeutic_area: str | None = Query(None),
+    # Biotech-specific filters
+    max_runway_months: int | None = Query(None, description="Max runway (e.g. 6 for <6mo runway companies)"),
+    min_runway_months: int | None = Query(None),
+    highest_phase: str | None = Query(None, description="PHASE1, PHASE2, PHASE3, PHASE4"),
+    profitability: str | None = Query(None, description="profitable | pre-revenue"),
+    has_catalyst_days: int | None = Query(None, description="Has a catalyst in next N days"),
     sort_by: str = Query("market_cap", description="Sort field"),
     sort_dir: str = Query("desc", description="asc or desc"),
     page: int = Query(1, ge=1),
@@ -33,7 +39,7 @@ async def list_companies(
 ):
     """List and search biotech companies with filtering and pagination."""
     # Build cache key from params
-    cache_key = f"companies:{search}:{exchange}:{min_market_cap}:{max_market_cap}:{sector}:{therapeutic_area}:{sort_by}:{sort_dir}:{page}:{per_page}"
+    cache_key = f"companies:{search}:{exchange}:{min_market_cap}:{max_market_cap}:{sector}:{therapeutic_area}:{max_runway_months}:{min_runway_months}:{highest_phase}:{profitability}:{has_catalyst_days}:{sort_by}:{sort_dir}:{page}:{per_page}"
     cached = cache.get(cache_key)
     if cached:
         return cached
@@ -65,6 +71,34 @@ async def list_companies(
 
     if therapeutic_area:
         query = query.where(Company.therapeutic_area.ilike(f"%{therapeutic_area}%"))
+
+    # Biotech filters
+    if max_runway_months is not None:
+        query = query.where(Company.runway_months.isnot(None))
+        query = query.where(Company.runway_months <= max_runway_months)
+    if min_runway_months is not None:
+        query = query.where(Company.runway_months >= min_runway_months)
+
+    if highest_phase:
+        from app.models.drug import Drug
+        subq = select(Drug.company_ticker).where(Drug.highest_phase == highest_phase).distinct()
+        query = query.where(Company.ticker.in_(subq))
+
+    if profitability == "profitable":
+        query = query.where(Company.profit_margin > 0)
+    elif profitability == "pre-revenue":
+        query = query.where(or_(Company.revenue.is_(None), Company.revenue == 0))
+
+    if has_catalyst_days:
+        from app.models.catalyst import Catalyst
+        cutoff = date.today() + timedelta(days=has_catalyst_days)
+        today = date.today()
+        subq = select(Catalyst.company_ticker).where(
+            Catalyst.expected_date >= today,
+            Catalyst.expected_date <= cutoff,
+            Catalyst.is_past == False,
+        ).distinct()
+        query = query.where(Company.ticker.in_(subq))
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
