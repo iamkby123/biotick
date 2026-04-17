@@ -26,6 +26,7 @@ from app.routers import (
     institutional,
     etfs,
     patents,
+    predictions,
 )
 
 logging.basicConfig(
@@ -152,6 +153,7 @@ app.include_router(historical.router)
 app.include_router(institutional.router)
 app.include_router(etfs.router)
 app.include_router(patents.router)
+app.include_router(predictions.router)
 
 
 @app.get("/api/health")

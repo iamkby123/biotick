@@ -19,6 +19,7 @@ import {
   History,
   Users,
   Grid3x3,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, useAuth } from "@/lib/providers";
@@ -37,6 +38,7 @@ const navSections = [
       { href: "/catalysts", label: "Calendar", icon: Calendar },
       { href: "/pdufa", label: "PDUFA Dates", icon: Pill },
       { href: "/competitors", label: "Competitors", icon: Grid3x3 },
+      { href: "/predictions", label: "Predictions", icon: Target },
       { href: "/historical", label: "Historical", icon: History },
     ],
   },
