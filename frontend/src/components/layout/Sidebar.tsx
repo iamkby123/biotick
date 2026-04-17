@@ -18,7 +18,6 @@ import {
   DollarSign,
   History,
   Users,
-  TrendingDown,
   Grid3x3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,7 +45,6 @@ const navSections = [
     items: [
       { href: "/earnings", label: "Earnings", icon: DollarSign },
       { href: "/insider-trades", label: "Insider Trades", icon: UserCheck },
-      { href: "/short-interest", label: "Short Interest", icon: TrendingDown },
       { href: "/conferences", label: "Conferences", icon: Users },
     ],
   },
