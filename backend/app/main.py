@@ -68,30 +68,9 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Schedule recurring syncs
-    # Prices: every 15 min during US market hours (9:30 AM - 4 PM ET, Mon-Fri)
-    scheduler.add_job(
-        scheduled_price_update,
-        IntervalTrigger(minutes=60),
-        id="price_update",
-        replace_existing=True,
-    )
-    # SEC filings: every 6 hours
-    scheduler.add_job(
-        scheduled_filing_sync,
-        CronTrigger(hour="*/6", minute=30),
-        id="filing_sync",
-        replace_existing=True,
-    )
-    # Trials + catalysts: daily at 5 AM ET
-    scheduler.add_job(
-        scheduled_trial_catalyst_sync,
-        CronTrigger(hour=5, minute=0),
-        id="trial_catalyst_sync",
-        replace_existing=True,
-    )
-    scheduler.start()
-    logger.info("Scheduler started — prices every 15min, filings every 6h, trials daily")
+    # Background syncs disabled — they block the single-threaded server
+    # Run syncs manually via /api/sync/* endpoints or locally instead
+    logger.info("Server ready — syncs run via API endpoints, not background scheduler")
 
     yield
 
