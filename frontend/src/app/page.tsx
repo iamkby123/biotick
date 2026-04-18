@@ -22,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/providers";
 
-import { useUpgradeUrl, STRIPE_PRO_URL } from "@/lib/stripe";
+import { useUpgrade } from "@/lib/stripe";
 
 export default function LandingPage() {
   return (
@@ -375,7 +375,7 @@ function HowItWorks() {
 
 /* ── Pricing ── */
 function Pricing() {
-  const upgradeUrl = useUpgradeUrl();
+  const upgrade = useUpgrade();
   return (
     <section id="pricing" className="max-w-6xl mx-auto px-6 py-24">
       <div className="text-center mb-16">
@@ -423,14 +423,13 @@ function Pricing() {
             <span className="text-4xl font-bold">$19.99</span>
             <span className="text-muted text-sm">/month</span>
           </div>
-          <a
-            href={upgradeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => { upgrade(); }}
             className="block w-full text-center py-3 rounded-lg font-semibold text-sm mt-6 bg-accent text-black hover:bg-accent-hover transition-colors"
           >
             Upgrade to Pro
-          </a>
+          </button>
           <ul className="mt-8 space-y-3">
             {[
               "All 1,000+ biotech companies",

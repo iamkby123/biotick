@@ -6,6 +6,7 @@ import json
 import httpx
 
 from fastapi import APIRouter, Request, HTTPException, Header
+from pydantic import BaseModel
 import stripe
 
 from app.database import async_session
@@ -18,13 +19,79 @@ router = APIRouter(prefix="/api/stripe", tags=["stripe"])
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
+# Stripe Pro subscription price ID (from Payment Link product)
+STRIPE_PRO_PRICE_ID = os.environ.get(
+    "STRIPE_PRO_PRICE_ID", "price_1TMRwRHhLOSR40wWKZYGeOUp"
+)
+
+# Where Stripe sends the user after checkout completes / is cancelled.
+SITE_URL = os.environ.get("SITE_URL", "https://biotick.io")
+
 # Supabase admin (service role) — needed to update profiles
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://bfhmaswnkzoowfxrsfce.supabase.co")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 
+async def _update_profile_by_id(user_id: str, plan: str, customer_id: str | None = None):
+    """Update a user's plan in Supabase profiles by Supabase user id."""
+    async with async_session() as db:
+        try:
+            # If customer_id is provided, set it; otherwise leave existing value intact.
+            if customer_id:
+                await db.execute(
+                    text("""
+                        UPDATE profiles
+                        SET plan = :plan, stripe_customer_id = :cid, updated_at = now()
+                        WHERE id = :uid
+                    """),
+                    {"plan": plan, "cid": customer_id, "uid": user_id},
+                )
+            else:
+                await db.execute(
+                    text("""
+                        UPDATE profiles
+                        SET plan = :plan, updated_at = now()
+                        WHERE id = :uid
+                    """),
+                    {"plan": plan, "uid": user_id},
+                )
+            await db.commit()
+            logger.info(f"Updated user_id={user_id} to plan={plan}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update user_id={user_id} to {plan}: {e}")
+            await db.rollback()
+            return False
+
+
+async def _update_profile_by_customer_id(customer_id: str, plan: str):
+    """Update a user's plan by Stripe customer ID (already linked to a profile)."""
+    async with async_session() as db:
+        try:
+            result = await db.execute(
+                text("""
+                    UPDATE profiles
+                    SET plan = :plan, updated_at = now()
+                    WHERE stripe_customer_id = :cid
+                    RETURNING id
+                """),
+                {"plan": plan, "cid": customer_id},
+            )
+            rows = result.fetchall()
+            await db.commit()
+            if rows:
+                logger.info(f"Updated customer_id={customer_id} to plan={plan} ({len(rows)} row)")
+                return True
+            logger.warning(f"No profile with stripe_customer_id={customer_id}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to update customer_id={customer_id} to {plan}: {e}")
+            await db.rollback()
+            return False
+
+
 async def update_user_plan(email: str, plan: str, customer_id: str | None = None):
-    """Update a user's plan in Supabase profiles by email."""
+    """Update a user's plan in Supabase profiles by email (legacy fallback)."""
     if not email:
         logger.warning("No email provided, skipping plan update")
         return False
@@ -63,6 +130,39 @@ async def update_user_plan(email: str, plan: str, customer_id: str | None = None
             return False
 
 
+class CreateCheckoutBody(BaseModel):
+    user_id: str
+    email: str | None = None
+
+
+@router.post("/create-checkout")
+async def create_checkout(body: CreateCheckoutBody):
+    """Create a Stripe Checkout Session tied to a Supabase user_id.
+
+    The client_reference_id makes the webhook match bulletproof — we don't have
+    to guess which Biotick account goes with which Stripe customer based on email.
+    """
+    if not stripe.api_key:
+        raise HTTPException(500, "Stripe not configured")
+    if not body.user_id:
+        raise HTTPException(400, "user_id is required")
+    try:
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": STRIPE_PRO_PRICE_ID, "quantity": 1}],
+            client_reference_id=body.user_id,
+            customer_email=body.email or None,
+            success_url=f"{SITE_URL}/dashboard?upgraded=1",
+            cancel_url=f"{SITE_URL}/",
+            allow_promotion_codes=True,
+            metadata={"supabase_user_id": body.user_id},
+        )
+        return {"url": session.url, "id": session.id}
+    except Exception as e:
+        logger.error(f"create-checkout failed for user {body.user_id}: {e}")
+        raise HTTPException(500, str(e))
+
+
 @router.post("/webhook")
 async def stripe_webhook(
     request: Request,
@@ -92,17 +192,33 @@ async def stripe_webhook(
 
     # Checkout completed — user paid for subscription
     if event_type == "checkout.session.completed":
+        mode = data.get("mode")
+        if mode != "subscription":
+            return {"received": True}
+
+        # Preferred: client_reference_id is the Supabase user id we set when creating the session.
+        # Fallback 1: metadata.supabase_user_id (same thing, different field).
+        # Fallback 2: email (legacy Payment Links that don't carry a reference id).
+        user_id = data.get("client_reference_id") or data.get("metadata", {}).get("supabase_user_id")
         email = data.get("customer_details", {}).get("email") or data.get("customer_email")
         customer_id = data.get("customer")
-        mode = data.get("mode")
-        if mode == "subscription" and email:
+
+        if user_id:
+            await _update_profile_by_id(user_id, "pro", customer_id)
+        elif email:
+            logger.warning(f"No client_reference_id on checkout.session.completed; falling back to email={email}")
             await update_user_plan(email, "pro", customer_id)
+        else:
+            logger.error(f"checkout.session.completed with no user_id and no email: customer={customer_id}")
 
     # Subscription deleted / cancelled
     elif event_type in ("customer.subscription.deleted", "customer.subscription.canceled"):
         customer_id = data.get("customer")
-        if customer_id:
-            # Look up email from Stripe customer
+        if not customer_id:
+            return {"received": True}
+        # Primary path: we already linked this customer_id to a profile, just flip plan to free.
+        if not await _update_profile_by_customer_id(customer_id, "free"):
+            # Fallback: look up email via Stripe and match that way.
             try:
                 cust = stripe.Customer.retrieve(customer_id)
                 email = cust.get("email")
@@ -115,12 +231,14 @@ async def stripe_webhook(
     elif event_type == "customer.subscription.updated":
         status = data.get("status")
         customer_id = data.get("customer")
-        if customer_id:
+        if not customer_id:
+            return {"received": True}
+        new_plan = "pro" if status in ("active", "trialing") else "free"
+        if not await _update_profile_by_customer_id(customer_id, new_plan):
             try:
                 cust = stripe.Customer.retrieve(customer_id)
                 email = cust.get("email")
                 if email:
-                    new_plan = "pro" if status in ("active", "trialing") else "free"
                     await update_user_plan(email, new_plan, customer_id)
             except Exception as e:
                 logger.error(f"Failed to fetch customer {customer_id}: {e}")

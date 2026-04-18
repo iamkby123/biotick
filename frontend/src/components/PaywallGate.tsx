@@ -1,15 +1,55 @@
 "use client";
 
 import Link from "next/link";
-import { Lock } from "lucide-react";
+import { useState } from "react";
+import { Lock, Loader2 } from "lucide-react";
 import { usePlan } from "@/hooks/usePlan";
-import { useUpgradeUrl } from "@/lib/stripe";
+import { useUpgrade } from "@/lib/stripe";
 
 export function ProBadge() {
   return (
     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-accent/15 text-accent uppercase tracking-wider">
       Pro
     </span>
+  );
+}
+
+function UpgradeButton({
+  className = "block w-full py-3 rounded-lg bg-accent text-black font-semibold text-sm hover:bg-accent-hover transition-colors",
+  label = "Upgrade — $19.99/mo",
+}: {
+  className?: string;
+  label?: string;
+}) {
+  const upgrade = useUpgrade();
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    setLoading(true);
+    try {
+      await upgrade();
+    } finally {
+      // If redirect succeeded the unmount happens before this runs.
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={loading}
+      className={className}
+    >
+      {loading ? (
+        <span className="inline-flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading…
+        </span>
+      ) : (
+        label
+      )}
+    </button>
   );
 }
 
@@ -21,7 +61,6 @@ export function PaywallGate({
   feature: string;
 }) {
   const { isPro, isLoggedIn } = usePlan();
-  const upgradeUrl = useUpgradeUrl();
 
   if (isPro) return <>{children}</>;
 
@@ -39,14 +78,7 @@ export function PaywallGate({
           report on Biotick — full catalysts, insider trades, predictions, and more.
         </p>
         <div className="flex flex-col gap-2 mt-6">
-          <a
-            href={upgradeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block w-full py-3 rounded-lg bg-accent text-black font-semibold text-sm hover:bg-accent-hover transition-colors"
-          >
-            Upgrade — $19.99/mo
-          </a>
+          <UpgradeButton />
           {!isLoggedIn && (
             <Link
               href="/login"
@@ -63,7 +95,6 @@ export function PaywallGate({
 
 export function PaywallBanner({ feature }: { feature: string }) {
   const { isPro } = usePlan();
-  const upgradeUrl = useUpgradeUrl();
   if (isPro) return null;
 
   return (
@@ -75,14 +106,10 @@ export function PaywallBanner({ feature }: { feature: string }) {
           <span className="text-muted"> — available with Pro</span>
         </p>
       </div>
-      <a
-        href={upgradeUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+      <UpgradeButton
         className="px-4 py-1.5 rounded-md bg-accent text-black text-xs font-semibold hover:bg-accent-hover transition shrink-0"
-      >
-        Upgrade
-      </a>
+        label="Upgrade"
+      />
     </div>
   );
 }
