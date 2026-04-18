@@ -6,6 +6,8 @@ import Link from "next/link";
 import { DollarSign, Loader2, Calendar, Clock } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn, formatMarketCap, formatPrice } from "@/lib/utils";
+import { PaywallGate } from "@/components/PaywallGate";
+import { usePlan } from "@/hooks/usePlan";
 
 interface EarningsItem {
   ticker: string;
@@ -54,6 +56,7 @@ function formatDate(dateStr: string): string {
 
 export default function EarningsPage() {
   const [rangeDays, setRangeDays] = useState(14);
+  const { isPro } = usePlan();
 
   const today = new Date();
   const start = today.toISOString().split("T")[0];
@@ -73,7 +76,7 @@ export default function EarningsPage() {
     grouped[e.date].push(e);
   }
 
-  return (
+  const content = (
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -208,4 +211,9 @@ export default function EarningsPage() {
       )}
     </div>
   );
+
+  if (!isPro) {
+    return <PaywallGate feature="Earnings Calendar">{content}</PaywallGate>;
+  }
+  return content;
 }

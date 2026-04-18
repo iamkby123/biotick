@@ -26,12 +26,12 @@ export function PaywallGate({
   if (isPro) return <>{children}</>;
 
   return (
-    <div className="relative">
+    <div className="relative min-h-[500px]">
       <div className="blur-sm pointer-events-none select-none opacity-50">
         {children}
       </div>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="bg-surface border border-border rounded-xl p-8 text-center max-w-sm shadow-2xl">
+      <div className="absolute inset-0 flex items-start sm:items-center justify-center px-4 pt-20 sm:pt-4 pb-4 overflow-y-auto">
+        <div className="bg-surface border border-border rounded-xl p-6 sm:p-8 text-center w-full max-w-sm shadow-2xl">
           <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-6 h-6 text-accent" />
           </div>

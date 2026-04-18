@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { PaywallGate } from "@/components/PaywallGate";
+import { usePlan } from "@/hooks/usePlan";
 
 interface Conference {
   id: number;
@@ -78,6 +80,7 @@ function daysUntil(dateStr: string): number {
 export default function ConferencesPage() {
   const [showPast, setShowPast] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const { isPro } = usePlan();
 
   const { data, isLoading } = useQuery<ConferenceResponse>({
     queryKey: ["conferences", showPast, categoryFilter],
@@ -105,7 +108,7 @@ export default function ConferencesPage() {
   // Unique categories
   const categories = [...new Set(conferences.map((c) => c.category).filter(Boolean))] as string[];
 
-  return (
+  const content = (
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -328,4 +331,9 @@ export default function ConferencesPage() {
       )}
     </div>
   );
+
+  if (!isPro) {
+    return <PaywallGate feature="Conference Schedule">{content}</PaywallGate>;
+  }
+  return content;
 }

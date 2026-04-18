@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn, formatMarketCap, formatPrice } from "@/lib/utils";
+import { PaywallGate } from "@/components/PaywallGate";
+import { usePlan } from "@/hooks/usePlan";
 
 interface HistoricalCatalyst {
   id: number;
@@ -67,6 +69,7 @@ export default function HistoricalCatalystsPage() {
   const [page, setPage] = useState(1);
   const [minSig, setMinSig] = useState(5);
   const [eventType, setEventType] = useState<string | null>(null);
+  const { isPro } = usePlan();
 
   const { data, isLoading } = useQuery<HistResponse>({
     queryKey: ["historical-catalysts", page, minSig, eventType],
@@ -82,7 +85,7 @@ export default function HistoricalCatalystsPage() {
 
   const catalysts = data?.catalysts || [];
 
-  return (
+  const content = (
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -231,4 +234,9 @@ export default function HistoricalCatalystsPage() {
       )}
     </div>
   );
+
+  if (!isPro) {
+    return <PaywallGate feature="Historical Catalysts">{content}</PaywallGate>;
+  }
+  return content;
 }

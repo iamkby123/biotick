@@ -7,6 +7,8 @@ import { Grid3x3, Loader2, Search } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { PHASE_LABELS } from "@/lib/constants";
+import { PaywallGate } from "@/components/PaywallGate";
+import { usePlan } from "@/hooks/usePlan";
 
 interface IndicationRow {
   indication: string;
@@ -22,6 +24,7 @@ interface IndicationsResponse {
 
 export default function CompetitorsPage() {
   const [search, setSearch] = useState("");
+  const { isPro } = usePlan();
 
   const { data, isLoading } = useQuery<IndicationsResponse>({
     queryKey: ["indication-matrix"],
@@ -51,7 +54,7 @@ export default function CompetitorsPage() {
 
   const phases = data?.phases || ["PHASE1", "PHASE2", "PHASE3", "PHASE4", "APPROVED"];
 
-  return (
+  const content = (
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -156,6 +159,11 @@ export default function CompetitorsPage() {
       )}
     </div>
   );
+
+  if (!isPro) {
+    return <PaywallGate feature="Competitor Matrix">{content}</PaywallGate>;
+  }
+  return content;
 }
 
 function getHeatmapClass(phase: string, intensity: number): string {
