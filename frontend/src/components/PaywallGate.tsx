@@ -25,38 +25,36 @@ export function PaywallGate({
 
   if (isPro) return <>{children}</>;
 
+  // Free users: do NOT render children. Show a dedicated upgrade panel so the
+  // gated content is truly inaccessible (no blurred leak, no API calls).
   return (
-    <div className="relative min-h-[500px]">
-      <div className="blur-sm pointer-events-none select-none opacity-50">
-        {children}
-      </div>
-      <div className="absolute inset-0 flex items-start sm:items-center justify-center px-4 pt-20 sm:pt-4 pb-4 overflow-y-auto">
-        <div className="bg-surface border border-border rounded-xl p-6 sm:p-8 text-center w-full max-w-sm shadow-2xl">
-          <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-6 h-6 text-accent" />
-          </div>
-          <h3 className="font-bold text-lg">Upgrade to Pro</h3>
-          <p className="text-sm text-muted mt-2">
-            {feature} is available on the Pro plan. Get full access to all biotech data.
-          </p>
-          <div className="flex flex-col gap-2 mt-6">
-            <a
-              href={upgradeUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block w-full py-3 rounded-lg bg-accent text-black font-semibold text-sm hover:bg-accent-hover transition-colors"
+    <div className="flex items-start sm:items-center justify-center min-h-[60vh] px-4 pt-6 sm:pt-4 pb-4">
+      <div className="bg-surface border border-border rounded-xl p-6 sm:p-8 text-center w-full max-w-md shadow-2xl">
+        <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+          <Lock className="w-6 h-6 text-accent" />
+        </div>
+        <h3 className="font-bold text-xl">{feature} is a Pro feature</h3>
+        <p className="text-sm text-muted mt-2">
+          Upgrade to Pro to unlock {feature.toLowerCase()} plus every other premium
+          report on Biotick — full catalysts, insider trades, predictions, and more.
+        </p>
+        <div className="flex flex-col gap-2 mt-6">
+          <a
+            href={upgradeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full py-3 rounded-lg bg-accent text-black font-semibold text-sm hover:bg-accent-hover transition-colors"
+          >
+            Upgrade — $19.99/mo
+          </a>
+          {!isLoggedIn && (
+            <Link
+              href="/login"
+              className="block w-full py-2 text-sm text-muted hover:text-foreground transition"
             >
-              Upgrade — $19.99/mo
-            </a>
-            {!isLoggedIn && (
-              <Link
-                href="/login"
-                className="block w-full py-2 text-sm text-muted hover:text-foreground transition"
-              >
-                Already Pro? Sign in
-              </Link>
-            )}
-          </div>
+              Already Pro? Sign in
+            </Link>
+          )}
         </div>
       </div>
     </div>
