@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { usePlan } from "@/hooks/usePlan";
-
-const STRIPE_PRO_URL = "https://buy.stripe.com/4gM14n9m1914cGm5lq73G02";
+import { useUpgradeUrl } from "@/lib/stripe";
 
 export function ProBadge() {
   return (
@@ -22,6 +21,7 @@ export function PaywallGate({
   feature: string;
 }) {
   const { isPro, isLoggedIn } = usePlan();
+  const upgradeUrl = useUpgradeUrl();
 
   if (isPro) return <>{children}</>;
 
@@ -41,7 +41,7 @@ export function PaywallGate({
           </p>
           <div className="flex flex-col gap-2 mt-6">
             <a
-              href={STRIPE_PRO_URL}
+              href={upgradeUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="block w-full py-3 rounded-lg bg-accent text-black font-semibold text-sm hover:bg-accent-hover transition-colors"
@@ -65,6 +65,7 @@ export function PaywallGate({
 
 export function PaywallBanner({ feature }: { feature: string }) {
   const { isPro } = usePlan();
+  const upgradeUrl = useUpgradeUrl();
   if (isPro) return null;
 
   return (
@@ -77,7 +78,7 @@ export function PaywallBanner({ feature }: { feature: string }) {
         </p>
       </div>
       <a
-        href={STRIPE_PRO_URL}
+        href={upgradeUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="px-4 py-1.5 rounded-md bg-accent text-black text-xs font-semibold hover:bg-accent-hover transition shrink-0"

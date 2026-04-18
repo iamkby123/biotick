@@ -22,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/providers";
 
-const STRIPE_PRO_URL = "https://buy.stripe.com/4gM14n9m1914cGm5lq73G02";
+import { useUpgradeUrl, STRIPE_PRO_URL } from "@/lib/stripe";
 
 export default function LandingPage() {
   return (
@@ -43,13 +43,26 @@ export default function LandingPage() {
 /* ── Navbar ── */
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const { user, loading } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { user, loading, signOut } = useAuth();
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handler);
     return () => window.removeEventListener("scroll", handler);
   }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuOpen]);
+
+  const displayName =
+    (user?.user_metadata as { full_name?: string } | undefined)?.full_name ||
+    user?.email?.split("@")[0] ||
+    "Account";
 
   return (
     <nav className={cn(
@@ -74,9 +87,54 @@ function Navbar() {
 
         <div className="flex items-center gap-3">
           {loading ? null : user ? (
-            <Link href="/dashboard" className="px-4 py-2 rounded-md bg-accent text-black text-sm font-semibold hover:bg-accent-hover transition">
-              Go to Dashboard
-            </Link>
+            <>
+              <Link
+                href="/dashboard"
+                className="px-4 py-2 rounded-md bg-accent text-black text-sm font-semibold hover:bg-accent-hover transition"
+              >
+                Go to Dashboard
+              </Link>
+              <div className="relative" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="w-9 h-9 rounded-full bg-surface border border-border hover:border-accent/50 text-sm font-semibold flex items-center justify-center transition-colors"
+                  title={user.email || undefined}
+                >
+                  {displayName.slice(0, 2).toUpperCase()}
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 rounded-lg border border-border bg-surface shadow-xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border">
+                      <p className="text-xs text-muted">Signed in as</p>
+                      <p className="text-sm font-medium truncate">{user.email}</p>
+                    </div>
+                    <Link
+                      href="/dashboard"
+                      className="block px-4 py-2 text-sm hover:bg-surface-hover transition"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Dashboard
+                    </Link>
+                    <Link
+                      href="/watchlist"
+                      className="block px-4 py-2 text-sm hover:bg-surface-hover transition"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Watchlist
+                    </Link>
+                    <button
+                      onClick={async () => {
+                        setMenuOpen(false);
+                        await signOut();
+                      }}
+                      className="block w-full text-left px-4 py-2 text-sm text-negative hover:bg-negative/5 transition border-t border-border"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
           ) : (
             <>
               <Link href="/login" className="text-sm text-muted hover:text-foreground transition hidden sm:block">
@@ -317,6 +375,7 @@ function HowItWorks() {
 
 /* ── Pricing ── */
 function Pricing() {
+  const upgradeUrl = useUpgradeUrl();
   return (
     <section id="pricing" className="max-w-6xl mx-auto px-6 py-24">
       <div className="text-center mb-16">
@@ -365,7 +424,7 @@ function Pricing() {
             <span className="text-muted text-sm">/month</span>
           </div>
           <a
-            href={STRIPE_PRO_URL}
+            href={upgradeUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="block w-full text-center py-3 rounded-lg font-semibold text-sm mt-6 bg-accent text-black hover:bg-accent-hover transition-colors"

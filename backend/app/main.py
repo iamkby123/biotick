@@ -27,6 +27,7 @@ from app.routers import (
     etfs,
     patents,
     predictions,
+    stripe_webhook,
 )
 
 logging.basicConfig(
@@ -154,6 +155,7 @@ app.include_router(institutional.router)
 app.include_router(etfs.router)
 app.include_router(patents.router)
 app.include_router(predictions.router)
+app.include_router(stripe_webhook.router)
 
 
 @app.get("/api/health")
