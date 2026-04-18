@@ -82,8 +82,9 @@ export default function PredictionsPage() {
         </div>
         <h1 className="text-3xl font-bold tracking-tight mt-1">Trial Predictions</h1>
         <p className="text-sm text-muted mt-1 max-w-2xl">
-          Shot on Goal score combines historical phase success rates, sponsor track record, indication difficulty,
-          and enrollment quality into a single 0-100 probability score. Red flags surface structural risk signals.
+          Shot on Goal is a percentile rank (0-100) comparing each active Phase 1-3 trial against
+          every other active biotech trial on its likelihood of reaching completion. 100 = top of the
+          stack; 50 = median. Red flags surface structural risk signals.
         </p>
       </div>
 
@@ -195,8 +196,12 @@ export default function PredictionsPage() {
             <div>
               <p className="font-medium">How Shot on Goal works</p>
               <p className="text-xs text-muted mt-1 leading-relaxed">
-                50% historical success rate for this indication & phase combination, 30% sponsor's own trial track record,
-                20% enrollment adequacy. Score ≥60 with zero red flags = high conviction. Based on {'>'}16,000 historical trials.
+                An XGBoost classifier trained on {'>'}11,000 historical trial outcomes scores each
+                active Phase 1-3 trial on features like indication success rate, sponsor track
+                record, enrollment size, and phase. The raw probability is then converted to a
+                percentile rank so a score of 90 means "top 10% of active biotech trials," not
+                "90% probability." Phase 4 trials are excluded (they're post-approval, not
+                predictive). Score ≥75 with zero red flags = high conviction.
               </p>
             </div>
           </div>
@@ -295,9 +300,11 @@ export default function PredictionsPage() {
 }
 
 function ScoreBadge({ score }: { score: number }) {
+  // Thresholds calibrated to the new percentile-rank score distribution:
+  //   >=75 top quartile (green), 25-75 middle (yellow), <25 bottom quartile (red).
   const color =
-    score >= 70 ? "text-positive bg-positive/15" :
-    score >= 50 ? "text-warning bg-warning/15" :
+    score >= 75 ? "text-positive bg-positive/15" :
+    score >= 25 ? "text-warning bg-warning/15" :
     "text-negative bg-negative/15";
   return (
     <div className={cn("w-11 h-11 rounded-full flex items-center justify-center font-bold text-[13px]", color)}>

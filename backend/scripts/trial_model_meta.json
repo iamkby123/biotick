@@ -17,78 +17,78 @@
     "planned_duration_days",
     "area_enc"
   ],
-  "auc": 0.8817029857244335,
-  "avg_precision": 0.9710731441010367,
-  "cv_auc_mean": 0.8766953418979998,
-  "cv_auc_std": 0.022262351610989144,
-  "training_size": 8511,
-  "test_size": 2128,
-  "success_rate": 0.8247955634928095,
+  "auc": 0.8899274007138561,
+  "avg_precision": 0.9717232554070072,
+  "cv_auc_mean": 0.881711556082417,
+  "cv_auc_std": 0.01800337943637073,
+  "training_size": 8908,
+  "test_size": 2227,
+  "success_rate": 0.822002694207454,
   "feature_importance": [
     {
-      "feature": "indication_rate",
-      "importance": 0.23257403075695038
+      "feature": "has_enrollment",
+      "importance": 0.2510542571544647
     },
     {
       "feature": "enrollment_log",
-      "importance": 0.16389606893062592
+      "importance": 0.15395359694957733
     },
     {
-      "feature": "has_enrollment",
-      "importance": 0.1466381847858429
+      "feature": "indication_rate",
+      "importance": 0.14820341765880585
     },
     {
       "feature": "sponsor_rate",
-      "importance": 0.11603135615587234
+      "importance": 0.10068449378013611
     },
     {
       "feature": "phase_ord",
-      "importance": 0.06772062927484512
+      "importance": 0.05878452956676483
     },
     {
       "feature": "area_enc",
-      "importance": 0.039523638784885406
+      "importance": 0.036203306168317795
     },
     {
       "feature": "indication_sample_size",
-      "importance": 0.039369117468595505
-    },
-    {
-      "feature": "planned_duration_days",
-      "importance": 0.03768276795744896
-    },
-    {
-      "feature": "sponsor_total",
-      "importance": 0.03429153189063072
-    },
-    {
-      "feature": "mcap_log",
-      "importance": 0.03258185461163521
-    },
-    {
-      "feature": "approval_count",
-      "importance": 0.03203577548265457
-    },
-    {
-      "feature": "low_runway",
-      "importance": 0.03013676404953003
+      "importance": 0.03501301631331444
     },
     {
       "feature": "has_revenue",
-      "importance": 0.02751827985048294
+      "importance": 0.035000868141651154
+    },
+    {
+      "feature": "sponsor_total",
+      "importance": 0.03461134806275368
+    },
+    {
+      "feature": "approval_count",
+      "importance": 0.03423452004790306
+    },
+    {
+      "feature": "planned_duration_days",
+      "importance": 0.033699117600917816
+    },
+    {
+      "feature": "low_runway",
+      "importance": 0.030949056148529053
+    },
+    {
+      "feature": "mcap_log",
+      "importance": 0.029672853648662567
+    },
+    {
+      "feature": "has_sponsor_history",
+      "importance": 0.01783885434269905
     },
     {
       "feature": "has_mcap",
-      "importance": 0.0
+      "importance": 9.675747423898429e-05
     },
     {
       "feature": "employees_log",
       "importance": 0.0
-    },
-    {
-      "feature": "has_sponsor_history",
-      "importance": 0.0
     }
   ],
-  "trained_at": "2026-04-17T21:23:05.065953"
+  "trained_at": "2026-04-18T23:47:01.344659"
 }

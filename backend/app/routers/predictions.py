@@ -81,12 +81,17 @@ async def get_high_conviction_trials(
     min_phase: str = Query("PHASE2", description="Min phase: PHASE1, PHASE2, PHASE3"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get trials with highest Shot on Goal scores and no red flags."""
-    phase_filter = ""
+    """Get trials with highest Shot on Goal scores and no red flags.
+
+    Phase 4 trials are never returned — they're post-approval surveillance and
+    their scores were cleared during retraining.
+    """
     if min_phase == "PHASE2":
-        phase_filter = "AND t.phase IN ('PHASE2','PHASE3','PHASE4')"
+        phase_filter = "AND t.phase IN ('PHASE2','PHASE3')"
     elif min_phase == "PHASE3":
-        phase_filter = "AND t.phase IN ('PHASE3','PHASE4')"
+        phase_filter = "AND t.phase = 'PHASE3'"
+    else:
+        phase_filter = "AND t.phase IN ('PHASE1','PHASE2','PHASE3')"
 
     result = await db.execute(
         text(f"""SELECT t.nct_id, t.company_ticker, t.phase, t.indication, t.overall_status,
@@ -97,6 +102,7 @@ async def get_high_conviction_trials(
                  JOIN trials t ON t.nct_id = tp.nct_id
                  LEFT JOIN companies c ON c.ticker = t.company_ticker
                  WHERE tp.risk_level = 'LOW'
+                   AND tp.shot_on_goal IS NOT NULL
                  {phase_filter}
                  ORDER BY tp.shot_on_goal DESC
                  LIMIT :lim"""),
@@ -137,6 +143,7 @@ async def get_red_flag_trials(
                 JOIN trials t ON t.nct_id = tp.nct_id
                 LEFT JOIN companies c ON c.ticker = t.company_ticker
                 WHERE tp.risk_level = 'HIGH'
+                  AND tp.shot_on_goal IS NOT NULL
                 ORDER BY jsonb_array_length(COALESCE(tp.red_flags, '[]'::jsonb)) DESC, tp.shot_on_goal ASC
                 LIMIT :lim"""),
         {"lim": limit},

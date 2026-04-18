@@ -11,6 +11,7 @@ import numpy as np
 import json
 import pickle
 from datetime import datetime, date
+from scipy.stats import rankdata
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import LabelEncoder
@@ -71,11 +72,17 @@ print(f"Training set: {len(train_df)}")
 train_df["success"] = (train_df["overall_status"] == "COMPLETED").astype(int)
 print(f"Success rate: {train_df['success'].mean()*100:.1f}%")
 
-# Active trials for prediction
-active_df = df[df["overall_status"].isin(
-    ["RECRUITING", "ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION"]
-)].copy()
-print(f"Active trials to score: {len(active_df)}")
+# Active trials for prediction.
+# EXCLUDE Phase 4 — those are post-approval surveillance trials. Nearly all
+# complete (their base rate is ~97%), so including them just saturates the
+# output distribution with spurious 100-scores.
+active_df = df[
+    df["overall_status"].isin(
+        ["RECRUITING", "ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION"]
+    )
+    & (df["phase"] != "PHASE4")
+].copy()
+print(f"Active trials to score (Phase 1-3 only): {len(active_df)}")
 
 
 # --- Feature engineering ---
@@ -158,6 +165,17 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 print(f"\nTrain: {len(X_train)}, Test: {len(X_test)}")
 
 # --- Train XGBoost ---
+# Balance the classes: COMPLETED dominates ~82% of the training data, so the
+# default output is heavily biased toward 1.0 ("will complete"). scale_pos_weight
+# puts more gradient on the minority (failure) class so the model has to actually
+# discriminate instead of predicting the majority.
+neg = int((y_train == 0).sum())
+pos = int((y_train == 1).sum())
+spw = neg / max(pos, 1)  # typical value around 0.22 here (majority = success, so we weight FAILURES more)
+# Invert: we want the minority class (failures) to weigh more. y=1 is the majority here.
+spw = pos / max(neg, 1)
+print(f"\nClass balance — success={pos}, failure={neg}, scale_pos_weight={spw:.3f}")
+
 print("\nTraining XGBoost...")
 model = XGBClassifier(
     n_estimators=400,
@@ -166,6 +184,7 @@ model = XGBClassifier(
     subsample=0.85,
     colsample_bytree=0.85,
     min_child_weight=5,
+    scale_pos_weight=spw,
     random_state=42,
     eval_metric="auc",
     n_jobs=-1,
@@ -202,33 +221,67 @@ print(f"\n=== FEATURE IMPORTANCE ===")
 print(importance.to_string(index=False))
 
 # --- Score all active trials ---
+# We convert raw probabilities to a PERCENTILE RANK (0-100) so the score is
+# interpretable as "top X%" rather than a raw probability. This also makes the
+# UI distribution meaningful: 100 = best-ranked trial, 50 = median, 0 = worst.
+# The model's AUC is unchanged because rank is monotonic in probability.
 print(f"\n=== SCORING ACTIVE TRIALS ===")
 X_active = active_df[features].fillna(0)
 probs = model.predict_proba(X_active)[:, 1]
 active_df["ml_success_prob"] = probs
-active_df["ml_score"] = (probs * 100).round().astype(int)
 
-print(f"Score distribution:")
+if len(probs) > 0:
+    # "average" method splits ties by the average rank; divide by n to get a
+    # percentile in (0, 1], then multiply to 0-100.
+    ranks = rankdata(probs, method="average")
+    percentile = ranks / len(probs) * 100.0
+    active_df["ml_score"] = np.clip(percentile.round().astype(int), 1, 100)
+else:
+    active_df["ml_score"] = []
+
+print(f"Score distribution (percentile rank):")
 print(f"  Mean: {active_df['ml_score'].mean():.1f}")
 print(f"  Min:  {active_df['ml_score'].min()}")
 print(f"  Max:  {active_df['ml_score'].max()}")
-print(f"  >70 (high conviction): {(active_df['ml_score'] >= 70).sum()}")
-print(f"  40-70 (medium): {((active_df['ml_score'] >= 40) & (active_df['ml_score'] < 70)).sum()}")
-print(f"  <40 (low): {(active_df['ml_score'] < 40).sum()}")
+print(f"  Top decile (>=90): {(active_df['ml_score'] >= 90).sum()}")
+print(f"  Top quartile (>=75): {(active_df['ml_score'] >= 75).sum()}")
+print(f"  Bottom quartile (<25): {(active_df['ml_score'] < 25).sum()}")
+
+# Also show the raw-prob sanity check so we can see the model isn't saturating.
+print(f"\nRaw probability distribution:")
+print(f"  Mean: {probs.mean():.3f}, Min: {probs.min():.3f}, Max: {probs.max():.3f}")
+print(f"  Prob >= 0.9: {(probs >= 0.9).sum()} / {len(probs)}")
+print(f"  Prob <= 0.1: {(probs <= 0.1).sum()} / {len(probs)}")
 
 # --- Update DB with ML scores ---
+# Risk level is now based on percentile rank:
+#   - LOW risk (green)  = top quartile, rank >= 75
+#   - HIGH risk (red)   = bottom quartile, rank < 25
+#   - MEDIUM otherwise
 print(f"\n=== UPDATING trial_predictions TABLE ===")
 cur = conn.cursor()
+
+# First: blank out scores for any Phase 4 rows still in the predictions table —
+# we no longer predict those. Leaving stale values would make the table lie.
+cur.execute("""
+    UPDATE trial_predictions tp
+    SET shot_on_goal = NULL, risk_level = NULL, updated_at = now()
+    FROM trials t
+    WHERE t.nct_id = tp.nct_id AND t.phase = 'PHASE4'
+""")
+print(f"Cleared scores on {cur.rowcount} Phase-4 rows (not predicted)")
+
 updated = 0
 for _, row in active_df.iterrows():
     try:
+        score = int(row["ml_score"])
         cur.execute("""
             UPDATE trial_predictions
             SET shot_on_goal = %s, risk_level = %s, updated_at = now()
             WHERE nct_id = %s
         """, (
-            int(row["ml_score"]),
-            "LOW" if row["ml_score"] >= 65 else ("HIGH" if row["ml_score"] < 40 else "MEDIUM"),
+            score,
+            "LOW" if score >= 75 else ("HIGH" if score < 25 else "MEDIUM"),
             row["nct_id"],
         ))
         if cur.rowcount > 0:
