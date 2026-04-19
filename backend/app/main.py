@@ -129,20 +129,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── Rate limiting ─────────────────────────────────────────────────
-# 120 req/min per IP by default. Specific endpoints can tighten further
-# with @limiter.limit("10/minute") at the route level.
+# Middleware is applied in REVERSE order of add_middleware calls:
+# the last added is the outermost wrapper. We want the request flow to be
+#   CORS  -> RateLimit  -> Cache  -> Gzip  -> route
+# so the rate limiter gets to count every request (even cache hits) and
+# gzip runs on the bytes that actually leave the server.
+
+# 1. Innermost: gzip compresses route responses for payloads >= 1KB.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# 2. Cache stores pre-gzip bytes so repeat hits skip the route + db entirely.
+app.add_middleware(ResponseCacheMiddleware)
+
+# 3. Rate limit sees every request — MUST be outside the cache or cached
+#    endpoints would be free to spam. 120 req/min per IP default; tighter
+#    limits applied per-route via @limiter.limit.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIASGIMiddleware)
 
-# ── Response cache (in-memory, TTL per route prefix) ──────────────
-app.add_middleware(ResponseCacheMiddleware)
-
-# ── Gzip compression for payloads >= 1KB ──────────────────────────
-app.add_middleware(GZipMiddleware, minimum_size=1024)
-
-# ── CORS (outermost so preflight always works) ───────────────────
+# 4. Outermost: CORS so preflight OPTIONS never gets blocked by inner layers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
