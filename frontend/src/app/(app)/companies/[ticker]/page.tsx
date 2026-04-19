@@ -24,6 +24,7 @@ import { fetchAPI } from "@/lib/api";
 import type { Company, Drug, Trial } from "@/lib/types";
 import { formatMarketCap, formatPrice, formatPercent, cn, formatNumber } from "@/lib/utils";
 import { PHASE_COLORS, PHASE_LABELS, THERAPEUTIC_AREA_COLORS, STATUS_COLORS, STATUS_LABELS } from "@/lib/constants";
+import { ShotOnGoalBadge, useBatchPredictions } from "@/components/ShotOnGoal";
 
 interface Filing {
   id: number;
@@ -965,6 +966,8 @@ function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
 
 /* ── Trials Tab ── */
 function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
+  const { data: predictions } = useBatchPredictions(trials.map((t) => t.nct_id));
+
   if (trials.length === 0) {
     return <EmptyState text="No clinical trials found" />;
   }
@@ -976,6 +979,7 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface/50 border-b border-border">
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Score</th>
               <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">NCT ID</th>
               <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Title</th>
               <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Phase</th>
@@ -993,6 +997,17 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
               return (
                 <>
                   <tr key={t.nct_id} className={cn("border-b border-border hover:bg-surface/80 transition-colors", t.why_stopped && "border-b-0")}>
+                    <td className="px-4 py-3">
+                      {predictions?.[t.nct_id] ? (
+                        <ShotOnGoalBadge
+                          score={predictions[t.nct_id].shot_on_goal}
+                          risk={predictions[t.nct_id].risk_level}
+                          flags={predictions[t.nct_id].red_flags}
+                        />
+                      ) : (
+                        <span className="text-muted/30 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <Link href={`/trials/${t.nct_id}`}
                         className="text-accent hover:underline text-[12px] font-mono">
@@ -1044,7 +1059,7 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
                   </tr>
                   {t.why_stopped && (
                     <tr key={`${t.nct_id}-reason`} className="border-b border-border bg-negative/[0.03]">
-                      <td colSpan={6} className="px-4 pb-3 pt-0">
+                      <td colSpan={7} className="px-4 pb-3 pt-0">
                         <div className="flex items-start gap-2 text-[11px]">
                           <span className={cn("font-semibold uppercase tracking-wider shrink-0", isTerminated ? "text-negative" : "text-muted")}>
                             {isTerminated ? "Stopped:" : "Note:"}

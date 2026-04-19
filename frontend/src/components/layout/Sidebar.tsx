@@ -20,7 +20,6 @@ import {
   History,
   Users,
   Grid3x3,
-  Target,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -42,7 +41,6 @@ const navSections = [
       { href: "/catalysts", label: "Calendar", icon: Calendar },
       { href: "/pdufa", label: "PDUFA Dates", icon: Pill },
       { href: "/competitors", label: "Competitors", icon: Grid3x3 },
-      { href: "/predictions", label: "Predictions", icon: Target },
       { href: "/historical", label: "Historical", icon: History },
     ],
   },

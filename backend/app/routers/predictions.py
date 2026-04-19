@@ -75,6 +75,39 @@ async def get_sponsor_track_record(ticker: str, db: AsyncSession = Depends(get_d
     }
 
 
+@router.get("/batch")
+async def get_trial_predictions_batch(
+    ids: str = Query(..., description="Comma-separated NCT IDs"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return predictions for multiple NCT IDs in one query.
+
+    Used by list views (drug detail, company detail) to render per-row
+    Shot on Goal badges without firing N+1 requests. Missing ids are
+    simply absent from the result map.
+    """
+    # Cap to 200 ids per call — well beyond any realistic list view.
+    nct_list = [n.strip().upper() for n in ids.split(",") if n.strip()][:200]
+    if not nct_list:
+        return {"predictions": {}}
+
+    result = await db.execute(
+        text("""SELECT nct_id, shot_on_goal, risk_level, red_flags
+                FROM trial_predictions
+                WHERE nct_id = ANY(:ids)
+                  AND shot_on_goal IS NOT NULL"""),
+        {"ids": nct_list},
+    )
+    predictions = {}
+    for row in result.fetchall():
+        predictions[row[0]] = {
+            "shot_on_goal": row[1],
+            "risk_level": row[2],
+            "red_flags": row[3] if row[3] else [],
+        }
+    return {"predictions": predictions}
+
+
 @router.get("/high-conviction")
 async def get_high_conviction_trials(
     limit: int = Query(50, ge=1, le=200),

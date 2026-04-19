@@ -26,6 +26,7 @@ import {
 import { fetchAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { PHASE_COLORS, PHASE_LABELS, STATUS_COLORS, STATUS_LABELS, THERAPEUTIC_AREA_COLORS } from "@/lib/constants";
+import { ShotOnGoalCard } from "@/components/ShotOnGoal";
 
 interface TrialDetail {
   nct_id: string;
@@ -185,6 +186,9 @@ export default function TrialDetailPage({
           )}
         </p>
       </div>
+
+      {/* Shot on Goal — silently hides itself if the trial isn't scored (e.g. Phase 4) */}
+      <ShotOnGoalCard nctId={trial.nct_id} />
 
       {/* Key stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
