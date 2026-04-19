@@ -1,7 +1,7 @@
 """Per-trial factor analysis.
 
 Deterministic rule-based signals (good/bad) for each trial. Replaces the
-earlier XGBoost "Shot on Goal" percentile, which was accurate but opaque —
+earlier XGBoost "Shot on Goal" percentile, which was accurate but opaque -
 factors are legible so users can actually reason about a trial.
 
 Factors are computed on demand from:
@@ -62,7 +62,7 @@ def _compute_factors(trial, sponsor, indication_rate, market_cap):
             factors.append({
                 "type": "positive",
                 "label": "Results published",
-                "detail": "Results posted on ClinicalTrials.gov — data is publicly available.",
+                "detail": "Results posted on ClinicalTrials.gov - data is publicly available.",
             })
 
     # ── Enrollment signals (phase-adjusted) ────────────────────────
@@ -78,7 +78,7 @@ def _compute_factors(trial, sponsor, indication_rate, market_cap):
                 factors.append({
                     "type": "negative",
                     "label": f"Small Phase 3 ({enrollment})",
-                    "detail": "Phase 3 trials typically enroll 300–3000 participants. Small Phase 3s risk being underpowered.",
+                    "detail": "Phase 3 trials typically enroll 300-3000 participants. Small Phase 3s risk being underpowered.",
                 })
         elif phase == "PHASE2":
             if enrollment >= 150:
@@ -123,7 +123,7 @@ def _compute_factors(trial, sponsor, indication_rate, market_cap):
             factors.append({
                 "type": "positive",
                 "label": "Strong sponsor completion rate",
-                "detail": f"Sponsor has completed {int(overall*100)}% of {total} historical trials — high execution consistency.",
+                "detail": f"Sponsor has completed {int(overall*100)}% of {total} historical trials - high execution consistency.",
             })
         elif total >= 5 and overall < 0.25:
             factors.append({
@@ -142,7 +142,7 @@ def _compute_factors(trial, sponsor, indication_rate, market_cap):
         factors.append({
             "type": "negative",
             "label": "Limited sponsor history",
-            "detail": "Insufficient historical trial data for this sponsor — execution risk is hard to assess.",
+            "detail": "Insufficient historical trial data for this sponsor - execution risk is hard to assess.",
         })
 
     # ── Indication difficulty ──────────────────────────────────────
@@ -157,7 +157,7 @@ def _compute_factors(trial, sponsor, indication_rate, market_cap):
             factors.append({
                 "type": "negative",
                 "label": "Difficult indication",
-                "detail": f"Only {int(indication_rate*100)}% of {phase.replace('PHASE','Phase ')} trials in this indication historically advance — this is a graveyard area.",
+                "detail": f"Only {int(indication_rate*100)}% of {phase.replace('PHASE','Phase ')} trials in this indication historically advance - this is a graveyard area.",
             })
 
     # ── Sponsor financial resources (market cap proxy) ─────────────
@@ -180,7 +180,7 @@ def _compute_factors(trial, sponsor, indication_rate, market_cap):
         factors.append({
             "type": "positive",
             "label": "Phase 3",
-            "detail": "Drug has already cleared Phase 1 safety and Phase 2 efficacy — it's been meaningfully de-risked.",
+            "detail": "Drug has already cleared Phase 1 safety and Phase 2 efficacy - it's been meaningfully de-risked.",
         })
 
     return factors
@@ -270,7 +270,7 @@ async def get_trial_factors_batch(
 ):
     """Return factor counts (positive / negative) per trial for list views.
 
-    Only returns summary counts — callers fetch the full list per-trial if needed.
+    Only returns summary counts - callers fetch the full list per-trial if needed.
     One SQL pass for all trials + bulk lookups for sponsors and indications.
     """
     nct_list = [n.strip().upper() for n in ids.split(",") if n.strip()][:200]
