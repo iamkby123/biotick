@@ -68,16 +68,25 @@ export default function InsiderTradesPage() {
   const [filter, setFilter] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<TradesResponse>({
+  const { data, isLoading, error } = useQuery<TradesResponse>({
     queryKey: ["all-insider-trades", filter, page],
-    queryFn: () => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("per_page", "50");
       params.set("sort_by", "transaction_date");
       params.set("sort_dir", "desc");
       if (filter) params.set("trade_type", filter);
-      return fetchAPI(`/filings/insider-trades?${params}`);
+      try {
+        return await fetchAPI(`/filings/insider-trades?${params}`);
+      } catch (e) {
+        // Bubble up — also log so DevTools shows the real URL + error.
+        console.error("[insider-trades] fetch failed", {
+          url: `/filings/insider-trades?${params}`,
+          error: e,
+        });
+        throw e;
+      }
     },
   });
 
@@ -130,6 +139,18 @@ export default function InsiderTradesPage() {
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-5 h-5 animate-spin text-accent" />
+        </div>
+      ) : error ? (
+        <div className="rounded-lg border border-negative/30 bg-negative/5 p-6 text-center">
+          <p className="text-sm font-semibold text-negative">
+            Couldn&apos;t load insider trades
+          </p>
+          <p className="text-xs text-muted mt-2 font-mono break-all">
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+          <p className="text-[11px] text-muted/70 mt-3">
+            Endpoint: {process.env.NEXT_PUBLIC_API_URL || "(unset)"}/filings/insider-trades
+          </p>
         </div>
       ) : trades.length === 0 ? (
         <div className="rounded-lg border border-border border-dashed p-16 text-center">
