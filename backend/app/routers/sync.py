@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.auth import require_admin_key
 from app.database import get_db, async_session
 from app.models.sync_log import SyncLog
 from app.sync.company_sync import sync_companies, enrich_companies_with_sic
@@ -22,7 +23,15 @@ from app.sync.sec_financials_sync import sync_sec_financials
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/sync", tags=["sync"])
+# Every route in this router is gated by X-Admin-Key. These endpoints
+# trigger expensive data refreshes (SEC EDGAR, Finnhub, Anthropic) and
+# were previously wide open — any random visitor could force-run them
+# and rack up API bills. Lock them all at the router level.
+router = APIRouter(
+    prefix="/api/sync",
+    tags=["sync"],
+    dependencies=[Depends(require_admin_key)],
+)
 
 # Track running sync jobs
 _running_syncs: set[str] = set()

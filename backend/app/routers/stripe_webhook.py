@@ -5,10 +5,11 @@ import os
 import json
 import httpx
 
-from fastapi import APIRouter, Request, HTTPException, Header
+from fastapi import APIRouter, Depends, Request, HTTPException, Header
 from pydantic import BaseModel
 import stripe
 
+from app.auth import get_current_user_id, require_admin_key
 from app.database import async_session
 from sqlalchemy import text
 from app.rate_limit import limiter
@@ -132,36 +133,41 @@ async def update_user_plan(email: str, plan: str, customer_id: str | None = None
 
 
 class CreateCheckoutBody(BaseModel):
-    user_id: str
+    # email is optional and advisory — Stripe prefills the checkout form.
+    # user_id used to be accepted here but is now derived from the verified
+    # Supabase JWT so a caller can't spoof another user's id.
     email: str | None = None
 
 
 @router.post("/create-checkout")
 @limiter.limit("10/minute")
-async def create_checkout(request: Request, body: CreateCheckoutBody):
-    """Create a Stripe Checkout Session tied to a Supabase user_id.
+async def create_checkout(
+    request: Request,
+    body: CreateCheckoutBody,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Create a Stripe Checkout Session tied to the authenticated Supabase user.
 
-    The client_reference_id makes the webhook match bulletproof - we don't have
-    to guess which Biotick account goes with which Stripe customer based on email.
+    The user id comes from a verified Supabase JWT in the Authorization
+    header, NOT from the request body. The webhook then matches payments
+    back to this user via client_reference_id.
     """
     if not stripe.api_key:
         raise HTTPException(500, "Stripe not configured")
-    if not body.user_id:
-        raise HTTPException(400, "user_id is required")
     try:
         session = stripe.checkout.Session.create(
             mode="subscription",
             line_items=[{"price": STRIPE_PRO_PRICE_ID, "quantity": 1}],
-            client_reference_id=body.user_id,
+            client_reference_id=user_id,
             customer_email=body.email or None,
             success_url=f"{SITE_URL}/dashboard?upgraded=1",
             cancel_url=f"{SITE_URL}/",
             allow_promotion_codes=True,
-            metadata={"supabase_user_id": body.user_id},
+            metadata={"supabase_user_id": user_id},
         )
         return {"url": session.url, "id": session.id}
     except Exception as e:
-        logger.error(f"create-checkout failed for user {body.user_id}: {e}")
+        logger.error(f"create-checkout failed for user {user_id}: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -170,23 +176,28 @@ async def stripe_webhook(
     request: Request,
     stripe_signature: str | None = Header(None, alias="stripe-signature"),
 ):
-    """Handle Stripe webhook events."""
+    """Handle Stripe webhook events.
+
+    Signature verification is MANDATORY. The previous "dev mode" fallback
+    (parsing unsigned payloads) was a money exploit: anyone could POST a
+    fake checkout.session.completed event and flip their own account to
+    Pro for free. Fail closed instead.
+    """
     payload = await request.body()
 
-    # Verify signature
-    if WEBHOOK_SECRET and stripe_signature:
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, stripe_signature, WEBHOOK_SECRET
-            )
-        except stripe.error.SignatureVerificationError:
-            raise HTTPException(status_code=400, detail="Invalid signature")
-    else:
-        # Dev mode: parse without verification
-        try:
-            event = json.loads(payload)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid payload")
+    if not WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET not set - rejecting webhook")
+        raise HTTPException(500, "Webhook not configured")
+    if not stripe_signature:
+        raise HTTPException(400, "Missing stripe-signature header")
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, stripe_signature, WEBHOOK_SECRET
+        )
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
 
     event_type = event.get("type")
     data = event.get("data", {}).get("object", {})
@@ -257,10 +268,12 @@ async def stripe_status():
     }
 
 
-@router.post("/sync-customer")
+@router.post("/sync-customer", dependencies=[Depends(require_admin_key)])
 async def sync_customer_by_email(email: str):
     """Manually sync a Stripe customer's subscription status by email.
-    Useful if a webhook was missed.
+    Admin-only (X-Admin-Key header required) — the endpoint hits the
+    Stripe API on every call, so leaving it open would let anyone burn
+    through our Stripe rate limit at no cost to them.
     """
     if not stripe.api_key:
         raise HTTPException(500, "Stripe not configured")

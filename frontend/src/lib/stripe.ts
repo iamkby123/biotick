@@ -1,5 +1,6 @@
 import { useAuth } from "./providers";
 import { fetchAPI } from "./api";
+import { supabase } from "./supabase";
 
 // Legacy static Payment Link — kept as a fallback for logged-out users.
 // Logged-in users always go through the backend-generated Checkout Session
@@ -22,9 +23,17 @@ export function useUpgrade() {
       return;
     }
     try {
+      // Send the Supabase access token — the backend verifies it and
+      // derives the user id from the JWT. This way a caller can't spoof
+      // another user's id by editing the request body.
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error("No Supabase session");
+
       const { url } = await fetchAPI<{ url: string }>("/stripe/create-checkout", {
         method: "POST",
-        body: JSON.stringify({ user_id: user.id, email: user.email }),
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: user.email }),
       });
       // Full navigation (not a new tab) so cookies/session are preserved on return.
       window.location.href = url;
