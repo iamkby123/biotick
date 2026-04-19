@@ -11,11 +11,6 @@ import {
   Users,
   Calendar,
   MapPin,
-  Shield,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Clock,
   FileText,
   Target,
   Beaker,
@@ -26,7 +21,7 @@ import {
 import { fetchAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { PHASE_COLORS, PHASE_LABELS, STATUS_COLORS, STATUS_LABELS, THERAPEUTIC_AREA_COLORS } from "@/lib/constants";
-import { TrialFactorsCard } from "@/components/TrialFactors";
+import { TrialFactorsCard, type Factor } from "@/components/TrialFactors";
 
 interface TrialDetail {
   nct_id: string;
@@ -143,8 +138,9 @@ export default function TrialDetailPage({
 
   const phase = trial.phases?.[trial.phases.length - 1] || null;
 
-  // Detect potential design flaws/considerations
-  const designNotes = getDesignNotes(trial);
+  // Design-level signals from ClinicalTrials.gov (masking, DMC, surrogate
+  // endpoints, duration) — merged into the Trial Factors card below.
+  const designFactors = getDesignFactors(trial);
 
   return (
     <div className="space-y-6">
@@ -187,8 +183,9 @@ export default function TrialDetailPage({
         </p>
       </div>
 
-      {/* Factor analysis — pros/cons. Hides itself if nothing to show. */}
-      <TrialFactorsCard nctId={trial.nct_id} />
+      {/* Trial Factors — API signals (sponsor, indication, enrollment) +
+          locally-computed design signals from ClinicalTrials.gov. */}
+      <TrialFactorsCard nctId={trial.nct_id} extraFactors={designFactors} />
 
       {/* Key stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -306,27 +303,6 @@ export default function TrialDetailPage({
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Design notes / potential concerns */}
-      {designNotes.length > 0 && (
-        <div className="rounded-lg border border-warning/30 bg-warning/5 p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-warning mb-3 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            Design Considerations
-          </h3>
-          <ul className="space-y-2">
-            {designNotes.map((note, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm">
-                <span className={cn("w-1.5 h-1.5 rounded-full mt-2 shrink-0", note.level === "warning" ? "bg-warning" : "bg-muted")} />
-                <div>
-                  <span className="font-medium">{note.title}:</span>{" "}
-                  <span className="text-muted">{note.description}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
         </div>
       )}
 
@@ -493,97 +469,125 @@ export default function TrialDetailPage({
   );
 }
 
-/* ── Design Notes Generator ── */
-function getDesignNotes(trial: TrialDetail): Array<{ title: string; description: string; level: "warning" | "info" }> {
-  const notes: Array<{ title: string; description: string; level: "warning" | "info" }> = [];
+/* ── Design-level factors from ClinicalTrials.gov ──
+ *
+ * The backend already emits factors for things it knows about (enrollment,
+ * status, sponsor, indication). This function only covers the CT.gov-specific
+ * design signals the backend can't see:
+ *   - Masking (open label)
+ *   - Control arm (single vs. multi-arm)
+ *   - Data Monitoring Committee
+ *   - Surrogate vs. clinical endpoints
+ *   - Trial duration
+ *
+ * Blinded / placebo / multi-arm trials also emit a POSITIVE factor so the
+ * card isn't lopsided toward concerns.
+ */
+function getDesignFactors(trial: TrialDetail): Factor[] {
+  const factors: Factor[] = [];
 
-  // Open label
-  if (trial.masking === "NONE" || trial.masking === "NONE_OPEN") {
-    notes.push({
-      title: "Open Label Design",
-      description: "No blinding — participants and investigators know who receives treatment. This can introduce bias in subjective endpoints.",
-      level: "warning",
+  // Masking — positive if double/triple-blinded, negative if open label.
+  const masking = trial.masking?.toUpperCase() || "";
+  if (masking === "NONE" || masking.startsWith("NONE_OPEN")) {
+    factors.push({
+      type: "negative",
+      label: "Open-label design",
+      detail:
+        "No blinding - participants and investigators know who receives treatment. Introduces bias on subjective endpoints.",
+    });
+  } else if (masking.includes("DOUBLE") || masking.includes("TRIPLE") || masking.includes("QUADRUPLE")) {
+    factors.push({
+      type: "positive",
+      label: "Blinded design",
+      detail:
+        "Double-blind or higher reduces observer bias and makes the efficacy signal more credible.",
     });
   }
 
-  // Single arm
-  if (trial.intervention_model === "SINGLE_GROUP" || trial.arms.length <= 1) {
-    notes.push({
-      title: "Single Arm Study",
-      description: "No control group for comparison. Results are harder to interpret without a placebo or active comparator arm.",
-      level: "warning",
+  // Control arm — positive if multi-arm with a control, negative if single-arm.
+  const isSingle = trial.intervention_model === "SINGLE_GROUP" || trial.arms.length <= 1;
+  if (isSingle) {
+    factors.push({
+      type: "negative",
+      label: "Single-arm study",
+      detail:
+        "No control group. Results are harder to interpret without a placebo or active comparator arm.",
     });
-  }
-
-  // Small enrollment
-  if (trial.enrollment && trial.enrollment < 50) {
-    notes.push({
-      title: "Small Sample Size",
-      description: `Only ${trial.enrollment} participants enrolled. Small studies have lower statistical power and results may not be generalizable.`,
-      level: "warning",
-    });
-  }
-
-  // No DMC
-  if (trial.has_dmc === false) {
-    notes.push({
-      title: "No Data Monitoring Committee",
-      description: "No independent DMC to monitor safety. This is unusual for late-phase trials and may indicate less rigorous oversight.",
-      level: "info",
-    });
-  }
-
-  // Phase 3 with small enrollment
-  if (trial.phases.includes("PHASE3") && trial.enrollment && trial.enrollment < 200) {
-    notes.push({
-      title: "Phase 3 With Limited Enrollment",
-      description: `${trial.enrollment} participants is relatively small for a Phase 3 trial, which typically requires hundreds to thousands for statistical significance.`,
-      level: "warning",
-    });
-  }
-
-  // Very long running trial
-  if (trial.start_date && trial.primary_completion_date) {
-    const start = new Date(trial.start_date);
-    const end = new Date(trial.primary_completion_date);
-    const years = (end.getTime() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-    if (years > 7) {
-      notes.push({
-        title: "Extended Duration",
-        description: `Trial spans ${Math.round(years)} years from start to primary completion. Extended timelines may indicate enrollment challenges or complex endpoints.`,
-        level: "info",
+  } else if (trial.arms.length >= 2) {
+    const hasPlacebo = trial.arms.some(
+      (a) => a.type?.toUpperCase().includes("PLACEBO") || a.label?.toLowerCase().includes("placebo")
+    );
+    if (hasPlacebo) {
+      factors.push({
+        type: "positive",
+        label: "Placebo-controlled",
+        detail:
+          "Includes a placebo arm - cleanest comparator for detecting real treatment effects.",
       });
     }
   }
 
-  // Surrogate endpoints
-  const primaryMeasures = trial.primary_outcomes.map(o => o.measure.toLowerCase()).join(" ");
-  if (primaryMeasures.includes("biomarker") || primaryMeasures.includes("response rate") || primaryMeasures.includes("surrogate")) {
-    notes.push({
-      title: "Surrogate Endpoint",
-      description: "Primary endpoint uses a surrogate marker rather than clinical outcome (like overall survival). FDA may require confirmatory trials.",
-      level: "info",
+  // DMC — positive if present, negative if explicitly absent.
+  if (trial.has_dmc === true) {
+    factors.push({
+      type: "positive",
+      label: "Data Monitoring Committee",
+      detail:
+        "Independent DMC monitors safety and efficacy data during the trial, a marker of rigorous oversight.",
+    });
+  } else if (trial.has_dmc === false) {
+    factors.push({
+      type: "negative",
+      label: "No Data Monitoring Committee",
+      detail:
+        "No independent DMC to monitor safety. Unusual for late-phase trials and suggests lighter oversight.",
     });
   }
 
-  // Terminated/suspended
-  if (trial.status === "TERMINATED") {
-    notes.push({
-      title: "Trial Terminated",
-      description: "This trial was stopped early, potentially due to safety concerns, lack of efficacy, or business decisions.",
-      level: "warning",
+  // Endpoint type (informational). Surrogate endpoints are a flag, hard clinical
+  // endpoints (OS, mortality, MACE) are a positive.
+  const primaryMeasures = trial.primary_outcomes.map((o) => o.measure.toLowerCase()).join(" ");
+  if (
+    primaryMeasures.includes("overall survival") ||
+    primaryMeasures.includes("mortality") ||
+    primaryMeasures.includes("mace")
+  ) {
+    factors.push({
+      type: "positive",
+      label: "Hard clinical endpoint",
+      detail:
+        "Primary endpoint measures a real clinical outcome (survival / mortality) rather than a surrogate marker.",
+    });
+  } else if (
+    primaryMeasures.includes("biomarker") ||
+    primaryMeasures.includes("surrogate")
+  ) {
+    factors.push({
+      type: "negative",
+      label: "Surrogate endpoint",
+      detail:
+        "Primary endpoint uses a surrogate marker rather than a clinical outcome. FDA may require confirmatory trials.",
     });
   }
 
-  if (trial.status === "SUSPENDED") {
-    notes.push({
-      title: "Trial Suspended",
-      description: "Enrollment or activities temporarily halted. May resume or be permanently discontinued.",
-      level: "warning",
-    });
+  // Very long running trial — informational negative.
+  if (trial.start_date && trial.primary_completion_date) {
+    const start = new Date(trial.start_date);
+    const end = new Date(trial.primary_completion_date);
+    const years =
+      (end.getTime() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    if (years > 7) {
+      factors.push({
+        type: "negative",
+        label: "Extended duration",
+        detail: `Trial spans ${Math.round(
+          years
+        )} years from start to primary completion. Long timelines often signal enrollment or endpoint complexity.`,
+      });
+    }
   }
 
-  return notes;
+  return factors;
 }
 
 /* ── Helper Components ── */

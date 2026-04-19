@@ -5,7 +5,7 @@ import { CheckCircle2, AlertTriangle, Scale } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-interface Factor {
+export interface Factor {
   label: string;
   type: "positive" | "negative";
   detail: string;
@@ -25,8 +25,18 @@ interface BatchResponse {
 /**
  * Full factor list — pros above, cons below.
  * Drop this on any trial detail page; it fetches its own data.
+ *
+ * `extraFactors` are client-computed signals (e.g. trial design notes from
+ * ClinicalTrials.gov) that the backend doesn't have access to. They get
+ * merged into the display alongside the API-fetched factors.
  */
-export function TrialFactorsCard({ nctId }: { nctId: string }) {
+export function TrialFactorsCard({
+  nctId,
+  extraFactors = [],
+}: {
+  nctId: string;
+  extraFactors?: Factor[];
+}) {
   const { data, isLoading } = useQuery<TrialFactorsResponse>({
     queryKey: ["trial-factors", nctId],
     queryFn: () => fetchAPI(`/predictions/trial/${nctId}`),
@@ -34,10 +44,13 @@ export function TrialFactorsCard({ nctId }: { nctId: string }) {
   });
 
   if (isLoading) return null;
-  if (!data || !data.scored || data.factors.length === 0) return null;
 
-  const positives = data.factors.filter((f) => f.type === "positive");
-  const negatives = data.factors.filter((f) => f.type === "negative");
+  const apiFactors = data?.scored ? data.factors : [];
+  const all = [...apiFactors, ...extraFactors];
+  if (all.length === 0) return null;
+
+  const positives = all.filter((f) => f.type === "positive");
+  const negatives = all.filter((f) => f.type === "negative");
 
   return (
     <div className="rounded-lg border border-border p-5">
