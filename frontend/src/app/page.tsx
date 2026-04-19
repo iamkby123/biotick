@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   Search,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/providers";
+import { fetchAPI } from "@/lib/api";
 
 import { useUpgrade } from "@/lib/stripe";
 
@@ -243,40 +245,68 @@ function Hero() {
 }
 
 /* ── Live Ticker Tape ── */
+// Tickers shown on the landing-page marquee, in the order they should appear.
+const TICKER_TAPE_SYMBOLS = [
+  "LLY", "NVO", "ABBV", "MRNA", "PFE", "AMGN",
+  "GILD", "VRTX", "REGN", "BIIB", "ALNY", "INCY",
+];
+
+interface TickerRow {
+  ticker: string;
+  price: number | null;
+  price_change_pct: number | null;
+}
+
 function TickerTape() {
-  const tickers = [
-    { sym: "LLY", price: 905.03, change: -1.89 },
-    { sym: "NVO", price: 39.32, change: 3.53 },
-    { sym: "ABBV", price: 210.26, change: 1.84 },
-    { sym: "MRNA", price: 54.26, change: 2.69 },
-    { sym: "PFE", price: 27.11, change: -0.76 },
-    { sym: "AMGN", price: 350.95, change: 0.30 },
-    { sym: "GILD", price: 140.45, change: 1.02 },
-    { sym: "VRTX", price: 444.28, change: 1.01 },
-    { sym: "REGN", price: 668.85, change: -0.44 },
-    { sym: "BIIB", price: 134.20, change: -2.10 },
-    { sym: "ALNY", price: 333.39, change: -1.77 },
-    { sym: "INCY", price: 55.80, change: 0.92 },
-  ];
+  // Pull live prices from the backend. The response cache on the server
+  // keeps this at ~10-40ms per request; the price sync job refreshes the
+  // DB every 30 min during market hours.
+  const { data } = useQuery<{ companies: TickerRow[] }>({
+    queryKey: ["ticker-tape", TICKER_TAPE_SYMBOLS.join(",")],
+    queryFn: () => fetchAPI(
+      `/companies?tickers=${TICKER_TAPE_SYMBOLS.join(",")}&per_page=${TICKER_TAPE_SYMBOLS.length}`
+    ),
+    staleTime: 60 * 1000,            // trust the server cache for 1 min
+    refetchInterval: 5 * 60 * 1000,  // refresh every 5 min while page is open
+  });
+
+  // Preserve the order above, not whatever order the API returned.
+  const byTicker = new Map<string, TickerRow>();
+  for (const c of data?.companies || []) byTicker.set(c.ticker, c);
+  const items = TICKER_TAPE_SYMBOLS
+    .map((sym) => byTicker.get(sym))
+    .filter((c): c is TickerRow => !!c && c.price != null);
+
+  // On first paint (pre-fetch), avoid layout shift with a thin skeleton bar.
+  if (items.length === 0) {
+    return (
+      <div className="border-y border-border bg-surface/50 overflow-hidden">
+        <div className="h-[46px]" aria-hidden />
+      </div>
+    );
+  }
 
   // Double for seamless scroll
-  const doubled = [...tickers, ...tickers];
+  const doubled = [...items, ...items];
 
   return (
     <div className="border-y border-border bg-surface/50 overflow-hidden">
       <div className="flex animate-ticker-scroll">
-        {doubled.map((t, i) => (
-          <div key={i} className="flex items-center gap-3 px-6 py-3 shrink-0 border-r border-border/50">
-            <span className="font-bold text-sm">{t.sym}</span>
-            <span className="font-mono text-sm">${t.price.toFixed(2)}</span>
-            <span className={cn(
-              "font-mono text-xs font-semibold px-1.5 py-0.5 rounded",
-              t.change >= 0 ? "text-positive bg-positive/10" : "text-negative bg-negative/10"
-            )}>
-              {t.change >= 0 ? "+" : ""}{t.change.toFixed(2)}%
-            </span>
-          </div>
-        ))}
+        {doubled.map((t, i) => {
+          const change = t.price_change_pct ?? 0;
+          return (
+            <div key={i} className="flex items-center gap-3 px-6 py-3 shrink-0 border-r border-border/50">
+              <span className="font-bold text-sm">{t.ticker}</span>
+              <span className="font-mono text-sm">${(t.price ?? 0).toFixed(2)}</span>
+              <span className={cn(
+                "font-mono text-xs font-semibold px-1.5 py-0.5 rounded",
+                change >= 0 ? "text-positive bg-positive/10" : "text-negative bg-negative/10"
+              )}>
+                {change >= 0 ? "+" : ""}{change.toFixed(2)}%
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

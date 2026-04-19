@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/companies", tags=["companies"])
 @router.get("", response_model=CompanyListResponse)
 async def list_companies(
     search: str | None = Query(None, description="Search by ticker or company name"),
+    tickers: str | None = Query(None, description="Comma-separated tickers to return (e.g. 'LLY,PFE,VRTX'). Overrides search."),
     exchange: str | None = Query(None),
     min_market_cap: float | None = Query(None),
     max_market_cap: float | None = Query(None),
@@ -39,7 +40,7 @@ async def list_companies(
 ):
     """List and search biotech companies with filtering and pagination."""
     # Build cache key from params
-    cache_key = f"companies:{search}:{exchange}:{min_market_cap}:{max_market_cap}:{sector}:{therapeutic_area}:{max_runway_months}:{min_runway_months}:{highest_phase}:{profitability}:{has_catalyst_days}:{sort_by}:{sort_dir}:{page}:{per_page}"
+    cache_key = f"companies:{search}:{tickers}:{exchange}:{min_market_cap}:{max_market_cap}:{sector}:{therapeutic_area}:{max_runway_months}:{min_runway_months}:{highest_phase}:{profitability}:{has_catalyst_days}:{sort_by}:{sort_dir}:{page}:{per_page}"
     cached = cache.get(cache_key)
     if cached:
         return cached
@@ -48,7 +49,13 @@ async def list_companies(
     query = select(Company).where(Company.sic_code.in_(BIOTECH_SIC_CODES))
 
     # Filters
-    if search:
+    # tickers= wins over search when both are given — it's how the ticker
+    # tape (landing page) fetches a specific curated set.
+    if tickers:
+        wanted = [t.strip().upper() for t in tickers.split(",") if t.strip()][:50]
+        if wanted:
+            query = query.where(Company.ticker.in_(wanted))
+    elif search:
         search_term = f"%{search}%"
         query = query.where(
             or_(
