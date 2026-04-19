@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -7,12 +7,17 @@ from app.models.company import Company
 from app.services.trade_analyzer import analyze_trade
 from app.cache.memory_cache import cache
 from app.config import CACHE_TTL_ANALYSIS, BIOTECH_SIC_CODES
+from app.rate_limit import limiter
 
 router = APIRouter(prefix="/api/analyzer", tags=["analyzer"])
 
 
+# Each analysis call hits Anthropic and costs real money. 5/min per IP is
+# plenty for a logged-in user clicking around, stops cost-amplifying abuse.
 @router.post("/{ticker}")
+@limiter.limit("5/minute")
 async def run_analysis(
+    request: Request,
     ticker: str,
     db: AsyncSession = Depends(get_db),
 ):

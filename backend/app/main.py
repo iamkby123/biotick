@@ -3,12 +3,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.database import init_db, async_session
 from app.config import FRONTEND_URL
+from app.response_cache import ResponseCacheMiddleware, cache_stats
+from app.rate_limit import limiter, rate_limit_exceeded_handler
 from app.routers import (
     companies,
     drugs,
@@ -122,7 +127,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow frontend
+# ── Rate limiting ─────────────────────────────────────────────────
+# 120 req/min per IP by default. Specific endpoints can tighten further
+# with @limiter.limit("10/minute") at the route level.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# ── Response cache (in-memory, TTL per route prefix) ──────────────
+app.add_middleware(ResponseCacheMiddleware)
+
+# ── Gzip compression for payloads >= 1KB ──────────────────────────
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# ── CORS (outermost so preflight always works) ───────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -183,4 +201,5 @@ async def health_check():
         "db_connected": db_ok,
         "scheduler_running": scheduler.running,
         "scheduled_jobs": jobs,
+        "cache": cache_stats(),
     }

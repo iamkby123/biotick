@@ -21,9 +21,15 @@ logger.info(f"Database URL: {_safe_url}")
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_size=5,
+    # Tuned for a 2-CPU Fly machine serving ~100 concurrent requests at
+    # peak. Supabase free tier allows 60 direct connections — we stay well
+    # under that to leave room for the scheduler + ad-hoc tooling.
+    pool_size=20,
     max_overflow=10,
     pool_pre_ping=True,
+    # Recycle connections every 30 min; Supabase drops idle connections
+    # and pool_pre_ping alone isn't enough on long-lived sockets.
+    pool_recycle=1800,
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

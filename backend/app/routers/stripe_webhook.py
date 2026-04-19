@@ -11,6 +11,7 @@ import stripe
 
 from app.database import async_session
 from sqlalchemy import text
+from app.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stripe", tags=["stripe"])
@@ -136,10 +137,11 @@ class CreateCheckoutBody(BaseModel):
 
 
 @router.post("/create-checkout")
-async def create_checkout(body: CreateCheckoutBody):
+@limiter.limit("10/minute")
+async def create_checkout(request: Request, body: CreateCheckoutBody):
     """Create a Stripe Checkout Session tied to a Supabase user_id.
 
-    The client_reference_id makes the webhook match bulletproof — we don't have
+    The client_reference_id makes the webhook match bulletproof - we don't have
     to guess which Biotick account goes with which Stripe customer based on email.
     """
     if not stripe.api_key:
