@@ -18,33 +18,32 @@ export function useUpgrade() {
   const { user } = useAuth();
 
   return async () => {
+    // Logged out: no JWT to send — use the static Payment Link (opens new tab).
     if (!user?.id) {
       window.open(STRIPE_PRO_BASE, "_blank", "noopener,noreferrer");
       return;
     }
-    try {
-      // Send the Supabase access token — the backend verifies it and
-      // derives the user id from the JWT. This way a caller can't spoof
-      // another user's id by editing the request body.
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token;
-      if (!token) throw new Error("No Supabase session");
 
-      const { url } = await fetchAPI<{ url: string }>("/stripe/create-checkout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email: user.email }),
-      });
-      // Full navigation (not a new tab) so cookies/session are preserved on return.
-      window.location.href = url;
-    } catch (err) {
-      console.error("Failed to create checkout session, falling back to payment link", err);
-      const sep = STRIPE_PRO_BASE.includes("?") ? "&" : "?";
-      const url = user.email
-        ? `${STRIPE_PRO_BASE}${sep}prefilled_email=${encodeURIComponent(user.email)}`
-        : STRIPE_PRO_BASE;
-      window.open(url, "_blank", "noopener,noreferrer");
+    // Authenticated flow: send the Supabase access token so the backend
+    // can derive the user id from the verified JWT (no spoofing).
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) {
+      throw new Error(
+        "Couldn't get your Supabase session. Try signing out and back in."
+      );
     }
+
+    const { url } = await fetchAPI<{ url: string }>("/stripe/create-checkout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email: user.email }),
+    });
+
+    // Navigate in the same tab so cookies/session are preserved on return.
+    window.location.href = url;
+    // Errors (network / backend 401 / etc.) bubble up to the caller so the
+    // UI can show the real message instead of a silent no-op.
   };
 }
 

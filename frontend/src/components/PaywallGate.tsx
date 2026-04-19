@@ -23,11 +23,17 @@ function UpgradeButton({
 }) {
   const upgrade = useUpgrade();
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const handleClick = async () => {
+    setErr(null);
     setLoading(true);
     try {
       await upgrade();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[upgrade] failed", e);
+      setErr(msg);
     } finally {
       // If redirect succeeded the unmount happens before this runs.
       setLoading(false);
@@ -35,21 +41,28 @@ function UpgradeButton({
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={loading}
-      className={className}
-    >
-      {loading ? (
-        <span className="inline-flex items-center justify-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading…
-        </span>
-      ) : (
-        label
+    <>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={loading}
+        className={className}
+      >
+        {loading ? (
+          <span className="inline-flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading…
+          </span>
+        ) : (
+          label
+        )}
+      </button>
+      {err && (
+        <p className="text-[11px] text-negative mt-2 font-mono break-words">
+          {err}
+        </p>
       )}
-    </button>
+    </>
   );
 }
 
