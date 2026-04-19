@@ -25,13 +25,17 @@ export async function fetchAPI<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
 
+  // IMPORTANT: spread options FIRST, then override headers + signal.
+  // The previous order (...options last) replaced the merged headers
+  // object when a caller passed custom headers, wiping out Content-Type
+  // and making FastAPI read the body as a raw string instead of JSON.
   const res = await fetch(url, {
+    ...options,
     headers: {
       "Content-Type": "application/json",
-      ...options?.headers,
+      ...(options?.headers || {}),
     },
     signal: controller.signal,
-    ...options,
   });
 
   clearTimeout(timeout);
