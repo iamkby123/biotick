@@ -143,7 +143,7 @@ export default function InsiderTradesPage() {
             {error instanceof Error ? error.message : String(error)}
           </p>
           <p className="text-[11px] text-muted/70 mt-3">
-            Endpoint: {process.env.NEXT_PUBLIC_API_URL || "(unset)"}/filings/form4
+            Endpoint: /proxy/filings/form4 (same-origin through Vercel)
           </p>
         </div>
       ) : trades.length === 0 ? (

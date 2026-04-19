@@ -1,4 +1,21 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+// Why /proxy: the browser fetches are routed same-origin to /proxy/*,
+// which next.config.ts rewrites at the edge to the real backend
+// (biotick-api.fly.dev). This keeps all client fetches on biotick.io so
+// ad-blockers and privacy shields can't pattern-match on the fly.dev
+// hostname or path names (insider-trades, filings, etc.). As a bonus,
+// CORS preflights go away too.
+//
+// In Node/SSR or when NEXT_PUBLIC_API_URL is explicitly set, we fall back
+// to hitting the backend directly — useful for local dev against a
+// non-proxied backend.
+function resolveApiBase(): string {
+  // Always same-origin in the browser.
+  if (typeof window !== "undefined") return "/proxy";
+  // Server-side: honour the env var, otherwise default to local FastAPI.
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+}
+
+const API_BASE = resolveApiBase();
 
 export async function fetchAPI<T>(
   endpoint: string,
