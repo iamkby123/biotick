@@ -143,7 +143,8 @@ export default function CompanyDetailPage({
 
   const { data: tradesData } = useQuery<{ trades: InsiderTrade[] }>({
     queryKey: ["insider-trades", ticker],
-    queryFn: () => fetchAPI(`/companies/${ticker}/insider-trades?per_page=10`),
+    // /form4 avoids ad-blocker filters that target "insider-trades" in URLs
+    queryFn: () => fetchAPI(`/companies/${ticker}/form4?per_page=10`),
   });
 
   const { data: insiderSummary } = useQuery<InsiderSummary>({

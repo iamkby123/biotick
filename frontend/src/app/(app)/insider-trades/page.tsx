@@ -77,16 +77,10 @@ export default function InsiderTradesPage() {
       params.set("sort_by", "transaction_date");
       params.set("sort_dir", "desc");
       if (filter) params.set("trade_type", filter);
-      try {
-        return await fetchAPI(`/filings/insider-trades?${params}`);
-      } catch (e) {
-        // Bubble up — also log so DevTools shows the real URL + error.
-        console.error("[insider-trades] fetch failed", {
-          url: `/filings/insider-trades?${params}`,
-          error: e,
-        });
-        throw e;
-      }
+      // Using /filings/form4 instead of /filings/insider-trades because
+      // many ad-blockers (EasyList, AdGuard, uBlock) block URLs containing
+      // "insider-trades" as "financial scraping" — even from our own API.
+      return await fetchAPI(`/filings/form4?${params}`);
     },
   });
 
@@ -149,7 +143,7 @@ export default function InsiderTradesPage() {
             {error instanceof Error ? error.message : String(error)}
           </p>
           <p className="text-[11px] text-muted/70 mt-3">
-            Endpoint: {process.env.NEXT_PUBLIC_API_URL || "(unset)"}/filings/insider-trades
+            Endpoint: {process.env.NEXT_PUBLIC_API_URL || "(unset)"}/filings/form4
           </p>
         </div>
       ) : trades.length === 0 ? (

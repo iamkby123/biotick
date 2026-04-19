@@ -52,7 +52,8 @@ async def get_company_filings(
     }
 
 
-@router.get("/companies/{ticker}/insider-trades")
+@router.get("/companies/{ticker}/form4")
+@router.get("/companies/{ticker}/insider-trades", include_in_schema=False)
 async def get_company_insider_trades(
     ticker: str,
     trade_type: str | None = Query(None),
@@ -100,7 +101,8 @@ async def get_company_insider_trades(
     }
 
 
-@router.get("/filings/insider-trades")
+@router.get("/filings/form4")
+@router.get("/filings/insider-trades", include_in_schema=False)
 async def get_all_insider_trades(
     trade_type: str | None = Query(None),
     sort_by: str = Query("transaction_date"),
