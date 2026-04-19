@@ -311,22 +311,26 @@ async def get_trial_factors_batch(
                 "overall_success_rate": r[3],
             }
 
-    # Bulk indication-phase lookup
-    ind_rates = {}
+    # Bulk indication-phase lookup. We fetch the Cartesian product of the
+    # unique indications and phases we need, then filter down to the actual
+    # pairs in Python. Cheaper than building a VALUES clause and sidesteps
+    # the Postgres unnest-zip footgun.
+    ind_rates: dict[tuple, float] = {}
     if ind_phase_pairs:
-        # Flatten into two parallel arrays
-        inds = [p[0] for p in ind_phase_pairs]
-        phases = [p[1] for p in ind_phase_pairs]
+        unique_inds = list({p[0] for p in ind_phase_pairs})
+        unique_phases = list({p[1] for p in ind_phase_pairs})
         ir = await db.execute(
             text("""SELECT indication, phase, success_rate
                     FROM indication_success_rates
-                    WHERE (indication, phase) IN (
-                      SELECT unnest(:i::text[]), unnest(:p::text[])
-                    )"""),
-            {"i": inds, "p": phases},
+                    WHERE indication = ANY(:i)
+                      AND phase = ANY(:p)"""),
+            {"i": unique_inds, "p": unique_phases},
         )
+        valid_pairs = set(ind_phase_pairs)
         for r in ir.fetchall():
-            ind_rates[(r[0], r[1])] = r[2]
+            pair = (r[0], r[1])
+            if pair in valid_pairs:
+                ind_rates[pair] = r[2]
 
     predictions = {}
     for r in rows:
