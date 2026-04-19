@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
+# SlowAPIASGIMiddleware (vs. SlowAPIMiddleware) is the one that enforces
+# default_limits globally; the plain one only respects @limiter.limit decorators.
+from slowapi.middleware import SlowAPIASGIMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -132,7 +134,7 @@ app = FastAPI(
 # with @limiter.limit("10/minute") at the route level.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(SlowAPIASGIMiddleware)
 
 # ── Response cache (in-memory, TTL per route prefix) ──────────────
 app.add_middleware(ResponseCacheMiddleware)
