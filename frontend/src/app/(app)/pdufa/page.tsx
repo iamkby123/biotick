@@ -159,7 +159,7 @@ export default function PDUFAPage() {
                 <span className="font-normal">({items.length})</span>
               </h2>
 
-              <div className="rounded-lg border border-border overflow-hidden">
+              <div className="rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-surface/50 border-b border-border">

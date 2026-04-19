@@ -130,7 +130,7 @@ export default function DashboardPage() {
               View all <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="rounded-lg border border-border overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface/50">
@@ -227,7 +227,7 @@ export default function DashboardPage() {
               <TrendingUp className="w-4 h-4 text-positive" />
               Top Gainers
             </h2>
-            <div className="rounded-lg border border-border overflow-hidden">
+            <div className="rounded-lg border border-border overflow-x-auto">
               {moversData.gainers.slice(0, 5).map((m, i) => (
                 <Link
                   key={m.ticker}
@@ -258,7 +258,7 @@ export default function DashboardPage() {
               <TrendingDown className="w-4 h-4 text-negative" />
               Top Losers
             </h2>
-            <div className="rounded-lg border border-border overflow-hidden">
+            <div className="rounded-lg border border-border overflow-x-auto">
               {moversData.losers.slice(0, 5).map((m, i) => (
                 <Link
                   key={m.ticker}

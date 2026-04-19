@@ -229,7 +229,7 @@ export default function PredictionsPage() {
           <p className="text-sm text-muted">No trials match this filter</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-lg border border-border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface/50 border-b border-border">

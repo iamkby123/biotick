@@ -120,7 +120,7 @@ export default function CompanyTable({
   const sortableColumns = ["ticker", "price", "price_change_pct", "market_cap", "sector"];
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
+    <div className="rounded-lg border border-border overflow-x-auto">
       <table className="w-full">
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (

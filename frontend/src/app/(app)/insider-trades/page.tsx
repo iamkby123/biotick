@@ -137,7 +137,7 @@ export default function InsiderTradesPage() {
           <p className="text-sm text-muted">No insider trades found</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-lg border border-border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface/50 border-b border-border">

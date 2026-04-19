@@ -190,7 +190,7 @@ export default function WatchlistPage() {
           <Loader2 className="w-5 h-5 animate-spin text-accent" />
         </div>
       ) : watchlist && watchlist.length > 0 ? (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-lg border border-border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface/50 border-b border-border">

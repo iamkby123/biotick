@@ -1,4 +1,5 @@
 import Sidebar from "@/components/layout/Sidebar";
+import { CommandPalette } from "@/components/CommandPalette";
 
 export default function AppLayout({
   children,
@@ -13,6 +14,7 @@ export default function AppLayout({
           {children}
         </div>
       </main>
+      <CommandPalette />
     </div>
   );
 }

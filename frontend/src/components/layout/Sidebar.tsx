@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, useAuth } from "@/lib/providers";
+import { useCommandPalette } from "@/components/CommandPalette";
 
 const navSections = [
   {
@@ -65,7 +66,12 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
+  const openPalette = useCommandPalette((s) => s.setOpen);
   const [collapsed, setCollapsed] = useState(false);
+  const [mac, setMac] = useState(false);
+  useEffect(() => {
+    setMac(typeof navigator !== "undefined" && /Mac/i.test(navigator.platform));
+  }, []);
 
   // Persist collapsed state
   useEffect(() => {
@@ -107,6 +113,28 @@ export default function Sidebar() {
       >
         {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
       </button>
+
+      {/* Quick search trigger — opens the Cmd+K palette */}
+      <div className={cn("pt-3", collapsed ? "px-1.5" : "px-3")}>
+        <button
+          onClick={() => openPalette(true)}
+          title={collapsed ? "Search (⌘K)" : undefined}
+          className={cn(
+            "w-full flex items-center rounded-md border border-border/60 bg-surface-hover/40 text-muted hover:text-foreground hover:border-border transition-all duration-100",
+            collapsed ? "justify-center px-0 py-2" : "gap-2 px-3 py-1.5"
+          )}
+        >
+          <Search className={collapsed ? "w-4 h-4" : "w-3.5 h-3.5"} />
+          {!collapsed && (
+            <>
+              <span className="text-[12px] flex-1 text-left">Search…</span>
+              <kbd className="text-[10px] font-mono border border-border rounded px-1 py-0.5">
+                {mac ? "⌘K" : "Ctrl+K"}
+              </kbd>
+            </>
+          )}
+        </button>
+      </div>
 
       {/* Navigation */}
       <nav className={cn(

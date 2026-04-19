@@ -140,7 +140,7 @@ export default function CatalystsPage() {
       </div>
 
       {/* Calendar */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="rounded-lg border border-border overflow-x-auto">
         {/* Month navigation */}
         <div className="flex items-center justify-between px-5 py-3 bg-surface/50 border-b border-border">
           <button onClick={prevMonth} className="p-1.5 rounded-md hover:bg-surface-hover transition">
@@ -265,7 +265,7 @@ export default function CatalystsPage() {
           <span className="font-normal ml-2">({allMonthCatalysts.length})</span>
         </h3>
         {allMonthCatalysts.length > 0 ? (
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="rounded-lg border border-border overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface/50 border-b border-border">

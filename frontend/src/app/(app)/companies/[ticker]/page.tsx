@@ -794,7 +794,7 @@ function OverviewTab({
         <div className="rounded-lg border border-border p-5">
           <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-1">Competitors</h3>
           <p className="text-[11px] text-muted mb-3">Companies with overlapping drug pipelines in {competitors.therapeutic_areas.join(", ")}</p>
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="rounded-lg border border-border overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="bg-surface/50 border-b border-border">
@@ -870,7 +870,7 @@ function OverviewTab({
               </div>
             ))}
           </div>
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="rounded-lg border border-border overflow-x-auto">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="bg-surface/50 border-b border-border">
@@ -922,7 +922,7 @@ function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
   }
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
+    <div className="rounded-lg border border-border overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-surface/50 border-b border-border">
@@ -972,7 +972,7 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
   return (
     <div>
       <p className="text-xs text-muted mb-3">{total} trials found</p>
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="rounded-lg border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface/50 border-b border-border">
@@ -1264,7 +1264,7 @@ function FilingsTab({ filings, trades }: { filings: Filing[]; trades: InsiderTra
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">SEC Filings</h3>
         {filings.length > 0 ? (
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="rounded-lg border border-border overflow-x-auto">
             {filings.map((f, i) => (
               <a
                 key={f.id}
@@ -1294,7 +1294,7 @@ function FilingsTab({ filings, trades }: { filings: Filing[]; trades: InsiderTra
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Insider Trades</h3>
         {trades.length > 0 ? (
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="rounded-lg border border-border overflow-x-auto">
             {trades.map((t, i) => (
               <div key={t.id} className={cn("flex items-center justify-between px-4 py-2.5 hover:bg-surface-hover transition-colors",
                 i < trades.length - 1 && "border-b border-border")}>
@@ -1362,7 +1362,7 @@ function SmartMoneySection({
         {" · "}
         <span className="font-mono">{formatMarketCap(institutional.total_value)}</span> total
       </p>
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="rounded-lg border border-border overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="bg-surface/50 border-b border-border">
@@ -1465,7 +1465,7 @@ function PatentsTab({ patents, total }: { patents: PatentRow[] | undefined; tota
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted">{total} patents found</p>
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="rounded-lg border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface/50 border-b border-border">
