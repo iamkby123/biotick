@@ -24,7 +24,7 @@ import { fetchAPI } from "@/lib/api";
 import type { Company, Drug, Trial } from "@/lib/types";
 import { formatMarketCap, formatPrice, formatPercent, cn, formatNumber } from "@/lib/utils";
 import { PHASE_COLORS, PHASE_LABELS, THERAPEUTIC_AREA_COLORS, STATUS_COLORS, STATUS_LABELS } from "@/lib/constants";
-import { ShotOnGoalBadge, useBatchPredictions } from "@/components/ShotOnGoal";
+import { FactorSummaryBadge, useBatchFactors } from "@/components/TrialFactors";
 
 interface Filing {
   id: number;
@@ -966,7 +966,7 @@ function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
 
 /* ── Trials Tab ── */
 function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
-  const { data: predictions } = useBatchPredictions(trials.map((t) => t.nct_id));
+  const { data: factorCounts } = useBatchFactors(trials.map((t) => t.nct_id));
 
   if (trials.length === 0) {
     return <EmptyState text="No clinical trials found" />;
@@ -998,11 +998,10 @@ function TrialsTab({ trials, total }: { trials: Trial[]; total: number }) {
                 <>
                   <tr key={t.nct_id} className={cn("border-b border-border hover:bg-surface/80 transition-colors", t.why_stopped && "border-b-0")}>
                     <td className="px-4 py-3">
-                      {predictions?.[t.nct_id] ? (
-                        <ShotOnGoalBadge
-                          score={predictions[t.nct_id].shot_on_goal}
-                          risk={predictions[t.nct_id].risk_level}
-                          flags={predictions[t.nct_id].red_flags}
+                      {factorCounts?.[t.nct_id] ? (
+                        <FactorSummaryBadge
+                          positive={factorCounts[t.nct_id].positive}
+                          negative={factorCounts[t.nct_id].negative}
                         />
                       ) : (
                         <span className="text-muted/30 text-xs">—</span>

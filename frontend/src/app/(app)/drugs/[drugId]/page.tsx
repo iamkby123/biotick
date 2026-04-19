@@ -14,7 +14,7 @@ import {
   STATUS_LABELS,
   THERAPEUTIC_AREA_COLORS,
 } from "@/lib/constants";
-import { ShotOnGoalBadge, useBatchPredictions } from "@/components/ShotOnGoal";
+import { FactorSummaryBadge, useBatchFactors } from "@/components/TrialFactors";
 
 export default function DrugDetailPage({
   params,
@@ -36,10 +36,10 @@ export default function DrugDetailPage({
     enabled: !!drug,
   });
 
-  // One batch call for every trial on this drug so we can render Shot on Goal
-  // badges inline without firing N requests.
+  // One batch call for every trial on this drug so we can render factor
+  // summary badges inline without firing N requests.
   const trialIds = drug?.trials.map((t) => t.nct_id) ?? [];
-  const { data: predictions } = useBatchPredictions(trialIds);
+  const { data: factorCounts } = useBatchFactors(trialIds);
 
   if (isLoading) {
     return (
@@ -252,11 +252,10 @@ export default function DrugDetailPage({
                     </div>
                     <p className="text-sm mt-1 line-clamp-2">{trial.title}</p>
                   </div>
-                  {predictions?.[trial.nct_id] && (
-                    <ShotOnGoalBadge
-                      score={predictions[trial.nct_id].shot_on_goal}
-                      risk={predictions[trial.nct_id].risk_level}
-                      flags={predictions[trial.nct_id].red_flags}
+                  {factorCounts?.[trial.nct_id] && (
+                    <FactorSummaryBadge
+                      positive={factorCounts[trial.nct_id].positive}
+                      negative={factorCounts[trial.nct_id].negative}
                     />
                   )}
                 </div>
