@@ -131,24 +131,28 @@ app = FastAPI(
 
 # Middleware is applied in REVERSE order of add_middleware calls:
 # the last added is the outermost wrapper. We want the request flow to be
-#   CORS  -> RateLimit  -> Cache  -> Gzip  -> route
-# so the rate limiter gets to count every request (even cache hits) and
-# gzip runs on the bytes that actually leave the server.
+#   CORS  ->  RateLimit  ->  Gzip  ->  Cache  ->  route
+#
+# Cache MUST sit inside gzip so it stores raw JSON; gzip then compresses
+# on egress per client Accept-Encoding. Previous order cached gzipped
+# bytes and stripped content-encoding, which gave clients unreadable
+# payloads on cache hits.
+#
+# Rate limit outside cache so cached hits still count against quota
+# (otherwise a cached endpoint is free to spam).
 
-# 1. Innermost: gzip compresses route responses for payloads >= 1KB.
-app.add_middleware(GZipMiddleware, minimum_size=1024)
-
-# 2. Cache stores pre-gzip bytes so repeat hits skip the route + db entirely.
+# 1. Innermost: cache. Stores raw route output (no encoding, no transforms).
 app.add_middleware(ResponseCacheMiddleware)
 
-# 3. Rate limit sees every request — MUST be outside the cache or cached
-#    endpoints would be free to spam. 120 req/min per IP default; tighter
-#    limits applied per-route via @limiter.limit.
+# 2. Gzip: compresses all responses (cached or fresh) for clients that Accept-Encoding it.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# 3. Rate limit sits above cache so every request is counted.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIASGIMiddleware)
 
-# 4. Outermost: CORS so preflight OPTIONS never gets blocked by inner layers.
+# 4. Outermost: CORS so preflight OPTIONS is never blocked.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

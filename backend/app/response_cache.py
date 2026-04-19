@@ -47,8 +47,27 @@ CACHE_RULES: list[tuple[str, int]] = [
 # Cap to avoid unbounded memory growth on a 512MB machine.
 _MAX_ENTRIES = 800
 
-# key -> (expires_at, status_code, body_bytes, content_type)
-_CACHE: dict[str, tuple[float, int, bytes, str]] = {}
+# key -> (expires_at, status_code, body_bytes, headers_dict)
+# Storing the full headers dict (minus hop-by-hop) so we don't strip
+# anything the route set intentionally.
+_CACHE: dict[str, tuple[float, int, bytes, dict[str, str]]] = {}
+
+# Headers that describe the wire representation rather than the payload.
+# Critical: content-encoding must NOT be cached. The cache sits *inside*
+# gzip in the middleware stack, so stored bodies are always uncompressed;
+# gzip middleware re-applies compression on egress per client.
+_HOP_HEADERS = {
+    "content-length",
+    "content-encoding",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "upgrade",
+}
 
 
 def _ttl_for(path: str) -> int:
@@ -102,22 +121,17 @@ class ResponseCacheMiddleware(BaseHTTPMiddleware):
         now = time.time()
         hit = _CACHE.get(key)
         if hit and hit[0] > now:
-            expires_at, status, body, content_type = hit
+            expires_at, status, body, saved_headers = hit
             age = int(ttl - (expires_at - now))
-            return Response(
-                content=body,
-                status_code=status,
-                headers={
-                    "content-type": content_type,
-                    "x-cache": "HIT",
-                    "age": str(max(0, age)),
-                    "cache-control": f"public, max-age={int(expires_at - now)}",
-                },
-            )
+            headers = dict(saved_headers)
+            headers["x-cache"] = "HIT"
+            headers["age"] = str(max(0, age))
+            headers["cache-control"] = f"public, max-age={int(expires_at - now)}"
+            return Response(content=body, status_code=status, headers=headers)
 
         response = await call_next(request)
 
-        # Only cache successful JSON-ish responses.
+        # Only cache successful JSON responses.
         if response.status_code != 200:
             return response
         content_type = response.headers.get("content-type", "")
@@ -130,20 +144,24 @@ class ResponseCacheMiddleware(BaseHTTPMiddleware):
         async for chunk in response.body_iterator:
             body += chunk
 
-        # Avoid caching huge payloads (>256KB) — they're rare and we'd rather
-        # keep the cache dense with small hot entries.
+        # Preserve route-set headers, dropping hop-by-hop ones (especially
+        # content-encoding, which must be re-applied by gzip per client).
+        saved_headers = {
+            k: v for k, v in response.headers.items() if k.lower() not in _HOP_HEADERS
+        }
+
+        # Skip huge payloads (>256KB) — keep the cache dense on 512MB.
         if len(body) <= 262_144:
-            _CACHE[key] = (now + ttl, response.status_code, body, content_type)
+            _CACHE[key] = (now + ttl, response.status_code, body, saved_headers)
             if len(_CACHE) > _MAX_ENTRIES:
                 _evict_expired_locked(now)
                 _evict_oldest_locked(_MAX_ENTRIES)
 
+        response_headers = dict(saved_headers)
+        response_headers["x-cache"] = "MISS"
+        response_headers["cache-control"] = f"public, max-age={ttl}"
         return Response(
             content=body,
             status_code=response.status_code,
-            headers={
-                "content-type": content_type,
-                "x-cache": "MISS",
-                "cache-control": f"public, max-age={ttl}",
-            },
+            headers=response_headers,
         )
