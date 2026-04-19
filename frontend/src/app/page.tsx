@@ -246,8 +246,10 @@ function Hero() {
 
 /* ── Live Ticker Tape ── */
 // Tickers shown on the landing-page marquee, in the order they should appear.
+// Keep this list limited to tickers we actually track in `companies` — any
+// symbol missing from the DB silently drops out of the marquee.
 const TICKER_TAPE_SYMBOLS = [
-  "LLY", "NVO", "ABBV", "MRNA", "PFE", "AMGN",
+  "LLY", "NVO", "MRNA", "PFE", "AMGN",
   "GILD", "VRTX", "REGN", "BIIB", "ALNY", "INCY",
 ];
 
