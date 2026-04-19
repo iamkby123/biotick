@@ -52,7 +52,9 @@ async def require_admin_key(x_admin_key: str | None = Header(None, alias="x-admi
 # legacy project; otherwise leave it unset.
 
 _SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://bfhmaswnkzoowfxrsfce.supabase.co").rstrip("/")
-_JWKS_URL = f"{_SUPABASE_URL}/auth/v1/.well-known/jwks"
+# Note: the trailing `.json` is important. Hitting `.well-known/jwks` (no
+# extension) is apikey-protected and returns 401 even for the public JWKS.
+_JWKS_URL = f"{_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
 
 # PyJWKClient caches keys internally and refreshes on `kid` misses.
 _jwks_client = jwt.PyJWKClient(_JWKS_URL, cache_keys=True, lifespan=300)
