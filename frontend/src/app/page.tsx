@@ -535,7 +535,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
 function Footer() {
   return (
     <footer className="border-t border-border bg-background">
-      <div className="max-w-6xl mx-auto px-6 py-12">
+      <div className="max-w-6xl mx-auto px-6 py-12 space-y-8">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <div className="w-6 h-6 rounded-md bg-accent flex items-center justify-center">
@@ -543,14 +543,26 @@ function Footer() {
             </div>
             <span className="font-bold text-sm">Biotick</span>
           </div>
-          <div className="flex items-center gap-6 text-sm text-muted">
+          <div className="flex items-center gap-x-6 gap-y-2 text-sm text-muted flex-wrap justify-center">
             <a href="#features" className="hover:text-foreground transition">Features</a>
             <a href="#pricing" className="hover:text-foreground transition">Pricing</a>
             <a href="#faq" className="hover:text-foreground transition">FAQ</a>
             <Link href="/dashboard" className="hover:text-foreground transition">App</Link>
+            <Link href="/privacy" className="hover:text-foreground transition">Privacy</Link>
+            <Link href="/terms" className="hover:text-foreground transition">Terms</Link>
           </div>
-          <p className="text-xs text-muted">&copy; {new Date().getFullYear()} Biotick. All rights reserved.</p>
+          <p className="text-xs text-muted">&copy; {new Date().getFullYear()} Biotick.</p>
         </div>
+
+        {/* Disclaimer — required wherever we're shown. Kept small and neutral-colored. */}
+        <p className="text-[11px] leading-relaxed text-muted/60 max-w-3xl mx-auto text-center border-t border-border/50 pt-6">
+          <span className="text-muted font-medium">Not financial advice.</span>{" "}
+          Biotick is a research tool for informational purposes only. We are not a registered
+          investment advisor. Nothing on this site is a recommendation to buy, sell, or hold any
+          security. Biotech investing is volatile and you can lose your entire investment. Data
+          is aggregated from public sources and provided without warranty — verify anything
+          important against the primary source.
+        </p>
       </div>
     </footer>
   );
