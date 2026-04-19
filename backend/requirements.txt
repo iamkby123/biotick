@@ -15,4 +15,6 @@ lxml==5.4.0
 anthropic>=0.49.0
 stripe>=11.1.0
 slowapi>=0.1.9
-PyJWT>=2.8.0
+# [crypto] pulls in `cryptography` — needed for ES256/RS256 JWT verification
+# against Supabase's asymmetric signing keys.
+PyJWT[crypto]>=2.8.0
