@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from slowapi.errors import RateLimitExceeded
 # SlowAPIASGIMiddleware (vs. SlowAPIMiddleware) is the one that enforces
 # default_limits globally; the plain one only respects @limiter.limit decorators.
@@ -129,30 +128,28 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware is applied in REVERSE order of add_middleware calls:
-# the last added is the outermost wrapper. We want the request flow to be
-#   CORS  ->  RateLimit  ->  Gzip  ->  Cache  ->  route
+# Middleware flow on each request:
+#   CORS  ->  RateLimit  ->  Cache  ->  route
 #
-# Cache MUST sit inside gzip so it stores raw JSON; gzip then compresses
-# on egress per client Accept-Encoding. Previous order cached gzipped
-# bytes and stripped content-encoding, which gave clients unreadable
-# payloads on cache hits.
-#
-# Rate limit outside cache so cached hits still count against quota
-# (otherwise a cached endpoint is free to spam).
+# Gzip used to live here, but Vercel's edge proxy was corrupting gzipped
+# responses coming back through the /proxy/* rewrite (body arrived empty
+# when client Accept-Encoding was gzip). Vercel compresses at the edge
+# anyway (brotli + zstd), so we just hand it raw JSON and let the edge
+# handle compression. For direct-to-Fly API traffic, uncompressed is
+# acceptable — we have no external consumers to optimise for yet.
 
-# 1. Innermost: cache. Stores raw route output (no encoding, no transforms).
+# 1. Innermost: response cache (stores raw JSON, TTL per route prefix).
 app.add_middleware(ResponseCacheMiddleware)
 
-# 2. Gzip: compresses all responses (cached or fresh) for clients that Accept-Encoding it.
-app.add_middleware(GZipMiddleware, minimum_size=1024)
-
-# 3. Rate limit sits above cache so every request is counted.
+# 2. Rate limit sits above cache so every request is counted,
+#    even cache hits.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIASGIMiddleware)
 
-# 4. Outermost: CORS so preflight OPTIONS is never blocked.
+# 3. Outermost: CORS for any direct-to-Fly requests (the Vercel proxy
+#    makes CORS irrelevant for browser traffic, but keep this for the
+#    rare direct consumer).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
