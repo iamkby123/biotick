@@ -1,14 +1,19 @@
-"""Populate the `patents` table from the USPTO PatentsView API.
+"""Populate the `patents` table via the Lens.org patent search API.
 
-API: https://search.patentsview.org/api/v1/patent/ (POST, JSON body).
+Docs: https://docs.api.lens.org/request-patent.html
+Endpoint: POST https://api.lens.org/patent/search
 
-As of 2024 PatentsView requires a free API key (45 req/min on free tier).
-Set PATENTSVIEW_API_KEY in the env. If missing, this sync logs a warning
-and exits cleanly rather than raising — the rest of the app keeps running.
+Auth: `Authorization: Bearer <LENS_API_KEY>` header. Register for a free
+key at https://www.lens.org/lens/user/subscriptions.
 
-For each company we match patents whose assignee_organization contains the
-company name (normalized). This replaces the earlier Google Patents scrape
-that got rate-limited after ~128 patents.
+Free-tier request budget is tight (roughly 1000 searches/month for the
+public plan), so we:
+  - Query once per company (not per patent), paging with size=50
+  - Restrict to jurisdiction=US so we're not wasting budget on foreign filings
+  - Cap per-company patents to 50 most recent (what users will actually read)
+  - Sleep 1.2s between requests to stay well under per-second throttles
+
+If LENS_API_KEY is unset, sync logs a warning and exits cleanly.
 """
 
 import asyncio
@@ -28,52 +33,141 @@ from app.models.sync_log import SyncLog
 
 logger = logging.getLogger(__name__)
 
-_API_URL = "https://search.patentsview.org/api/v1/patent/"
+_API_URL = "https://api.lens.org/patent/search"
 
 
 def _normalize_for_match(name: str) -> str:
-    """Strip common corporate suffixes + lowercase for fuzzy assignee match."""
+    """Strip corporate suffixes + lowercase for fuzzy assignee match."""
+    if not name:
+        return ""
     s = name.lower()
-    s = re.sub(r",?\s+(inc\.?|corp\.?|corporation|ltd\.?|plc|llc|co\.?|holdings?|pharmaceuticals?|therapeutics|biosciences?|biotech)$", "", s)
+    s = re.sub(
+        r",?\s+(inc\.?|corp\.?|corporation|ltd\.?|plc|llc|co\.?|holdings?|pharmaceuticals?|therapeutics|biosciences?|biotech)$",
+        "",
+        s,
+    )
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
     return s
 
 
 def _expiration_from_filing(filing_date: date | None) -> date | None:
-    """US utility patents expire 20y from filing. Approximation — ignores
-    PTA/PTE extensions and maintenance-fee lapses, but good enough for UX."""
+    """US utility patents expire 20y from filing. Ignores PTA/PTE."""
     if not filing_date:
         return None
     try:
         return filing_date.replace(year=filing_date.year + 20)
     except ValueError:
-        # Leap-day edge case
         return filing_date + timedelta(days=365 * 20)
 
 
-async def _fetch_patents_for_company(
-    client: httpx.AsyncClient,
-    company_name: str,
-    api_key: str,
-    limit: int = 50,
+def _parse_lens_date(raw: str | None) -> date | None:
+    """Lens dates are ISO strings 'YYYY-MM-DD' or occasionally 'YYYY-MM-DDT...'."""
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _applicant_name(record: dict) -> str | None:
+    """Lens docs nest applicants under biblio.parties.applicants[].extracted_name.value."""
+    try:
+        parties = (record.get("biblio", {}) or {}).get("parties", {}) or {}
+        applicants = parties.get("applicants", []) or []
+        if not applicants:
+            return None
+        first = applicants[0] or {}
+        ext = first.get("extracted_name") or {}
+        name = ext.get("value") or first.get("residence") or None
+        return name
+    except Exception:
+        return None
+
+
+def _invention_title(record: dict) -> str | None:
+    """Title sits under biblio.invention_title[] — pick the English variant."""
+    try:
+        titles = (record.get("biblio", {}) or {}).get("invention_title", []) or []
+        for t in titles:
+            if (t.get("lang") or "").lower().startswith("en"):
+                return t.get("text")
+        return titles[0].get("text") if titles else None
+    except Exception:
+        return None
+
+
+def _abstract_text(record: dict) -> str | None:
+    try:
+        absts = record.get("abstract") or []
+        for a in absts:
+            if (a.get("lang") or "").lower().startswith("en"):
+                return a.get("text")
+        return absts[0].get("text") if absts else None
+    except Exception:
+        return None
+
+
+def _app_filing_date(record: dict) -> date | None:
+    try:
+        app_refs = (record.get("biblio", {}) or {}).get("application_reference", []) or []
+        if not app_refs:
+            return None
+        return _parse_lens_date(app_refs[0].get("date"))
+    except Exception:
+        return None
+
+
+def _pub_date(record: dict) -> date | None:
+    try:
+        pub = (record.get("biblio", {}) or {}).get("publication_reference", {}) or {}
+        return _parse_lens_date(pub.get("date"))
+    except Exception:
+        return None
+
+
+def _doc_number(record: dict) -> str | None:
+    """Prefer jurisdictioned doc number like 'US11123456B2', else raw lens_id."""
+    try:
+        pub = (record.get("biblio", {}) or {}).get("publication_reference", {}) or {}
+        juris = pub.get("jurisdiction") or ""
+        num = pub.get("doc_number") or ""
+        kind = pub.get("kind") or ""
+        if num:
+            return f"{juris}{num}{kind}".strip()
+    except Exception:
+        pass
+    return record.get("lens_id")
+
+
+async def _search_company(
+    client: httpx.AsyncClient, company_name: str, token: str, limit: int = 50
 ) -> list[dict]:
-    """Return raw patent records for a company, newest first."""
-    # Use ID query to get patents whose assignee organization contains the
-    # company name (case-insensitive). The PatentsView query language allows
-    # `_text_any` for a substring-contains match on the assignees.organization.
+    """Return raw patent records for a company, newest first.
+
+    We restrict to US-granted patents (jurisdiction=US, publication_type=granted)
+    to both constrain the budget and match the old PatentsView behaviour.
+    """
     body = {
-        "q": {"_text_any": {"assignees.assignee_organization": company_name}},
-        "f": [
-            "patent_id",
-            "patent_title",
-            "patent_date",
-            "patent_abstract",
-            "patent_type",
-            "assignees.assignee_organization",
-            "application.filing_date",
+        "query": {
+            "bool": {
+                "must": [
+                    {"match_phrase": {"applicant.name": company_name}},
+                    {"term": {"jurisdiction": "US"}},
+                ]
+            }
+        },
+        "size": limit,
+        "sort": [{"date_published": "desc"}],
+        "include": [
+            "lens_id",
+            "biblio.publication_reference",
+            "biblio.application_reference",
+            "biblio.parties.applicants",
+            "biblio.invention_title",
+            "abstract",
+            "publication_type",
         ],
-        "s": [{"patent_date": "desc"}],
-        "o": {"size": limit},
     }
 
     try:
@@ -81,38 +175,43 @@ async def _fetch_patents_for_company(
             _API_URL,
             json=body,
             headers={
-                "X-Api-Key": api_key,
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
                 "User-Agent": "BiotickPatents/1.0 (+https://biotick.io)",
             },
-            timeout=25,
+            timeout=30,
         )
     except Exception as e:
-        logger.warning(f"PatentsView fetch failed for {company_name}: {e}")
+        logger.warning(f"Lens fetch failed for {company_name}: {e}")
         return []
 
     if resp.status_code == 429:
-        logger.warning("PatentsView rate-limit hit; sleeping 60s")
+        logger.warning("Lens rate-limit hit; sleeping 60s")
         await asyncio.sleep(60)
+        return []
+    if resp.status_code == 401:
+        logger.error("Lens 401 — check LENS_API_KEY")
         return []
     if resp.status_code != 200:
         logger.warning(
-            f"PatentsView {company_name!r}: {resp.status_code} {resp.text[:200]}"
+            f"Lens {company_name!r}: {resp.status_code} {resp.text[:200]}"
         )
         return []
 
     try:
-        return (resp.json() or {}).get("patents", []) or []
+        data = resp.json() or {}
     except Exception as e:
-        logger.warning(f"PatentsView bad JSON for {company_name}: {e}")
+        logger.warning(f"Lens bad JSON for {company_name}: {e}")
         return []
+
+    return data.get("data", []) or []
 
 
 async def sync_patents(db: AsyncSession, limit_companies: int | None = None) -> int:
-    """Re-populate patents for every company using PatentsView."""
-    api_key = os.environ.get("PATENTSVIEW_API_KEY", "").strip()
-    if not api_key:
-        logger.warning("PATENTSVIEW_API_KEY not set — skipping patents sync")
+    """Re-populate patents for every company via Lens.org."""
+    token = os.environ.get("LENS_API_KEY", "").strip()
+    if not token:
+        logger.warning("LENS_API_KEY not set — skipping patents sync")
         return 0
 
     log = SyncLog(sync_type="PATENTS", started_at=datetime.utcnow(), status="RUNNING")
@@ -131,59 +230,39 @@ async def sync_patents(db: AsyncSession, limit_companies: int | None = None) -> 
                 if not name:
                     continue
 
-                records = await _fetch_patents_for_company(client, name, api_key)
+                records = await _search_company(client, name, token)
 
                 expected_match = _normalize_for_match(name)
                 batch = 0
                 for rec in records:
                     try:
-                        patent_number = str(rec.get("patent_id") or "").strip()
-                        if not patent_number:
+                        doc_number = (_doc_number(rec) or "").strip()
+                        if not doc_number:
                             continue
 
-                        # Verify the assignee actually matches — PatentsView's
-                        # _text_any is liberal so we double-check to avoid
-                        # assigning, e.g., "Johnson & Johnson" patents to any
-                        # ticker whose name contains "Johnson".
-                        assignees = rec.get("assignees") or []
-                        assignee_name = (
-                            assignees[0].get("assignee_organization")
-                            if assignees
-                            else None
-                        )
-                        if assignee_name:
-                            norm = _normalize_for_match(assignee_name)
+                        # Re-check assignee match — Lens's match_phrase can still
+                        # return loose matches (e.g. "Johnson Research Inc" for
+                        # an "Johnson" query).
+                        assignee = _applicant_name(rec)
+                        if assignee:
+                            norm = _normalize_for_match(assignee)
                             if expected_match not in norm and norm not in expected_match:
                                 continue
 
-                        grant_date_str = rec.get("patent_date")
-                        grant_date = (
-                            datetime.strptime(grant_date_str, "%Y-%m-%d").date()
-                            if grant_date_str
-                            else None
-                        )
-
-                        app_arr = rec.get("application") or []
-                        filing_date_str = (
-                            app_arr[0].get("filing_date") if app_arr else None
-                        )
-                        filing_date = (
-                            datetime.strptime(filing_date_str, "%Y-%m-%d").date()
-                            if filing_date_str
-                            else None
-                        )
+                        filing_date = _app_filing_date(rec)
+                        grant_date = _pub_date(rec)
 
                         async with db.begin_nested():
                             stmt = pg_upsert(Patent).values(
-                                patent_number=patent_number,
-                                title=(rec.get("patent_title") or "")[:1000],
-                                assignee_name=(assignee_name or "")[:300],
+                                patent_number=doc_number[:40],
+                                title=(_invention_title(rec) or "")[:1000] or None,
+                                assignee_name=(assignee or "")[:300] or None,
                                 company_ticker=ticker,
                                 filing_date=filing_date,
                                 grant_date=grant_date,
                                 expiration_date=_expiration_from_filing(filing_date),
-                                abstract=(rec.get("patent_abstract") or "")[:4000],
-                                patent_type=rec.get("patent_type"),
+                                abstract=(_abstract_text(rec) or "")[:4000] or None,
+                                patent_type=(rec.get("publication_type") or "")[:40] or None,
                             )
                             stmt = stmt.on_conflict_do_update(
                                 index_elements=["patent_number"],
@@ -204,21 +283,25 @@ async def sync_patents(db: AsyncSession, limit_companies: int | None = None) -> 
                         if batch % 50 == 0:
                             await db.commit()
                     except Exception as e:
-                        logger.warning(f"patent row error {patent_number}: {e}")
+                        logger.warning(f"patent row error {doc_number}: {e}")
                         continue
 
                 if batch:
                     await db.commit()
                     logger.debug(f"{ticker}: +{batch} patents")
 
-                # Free tier is 45/min; 1.4s per company stays under.
-                await asyncio.sleep(1.4)
+                # Conservative pacing — free tier is ~1k searches/mo so we
+                # must keep the daily churn low anyway. 1.2s/company =
+                # 3000 companies/hour max, fine for any foreseeable universe.
+                await asyncio.sleep(1.2)
 
         log.completed_at = datetime.utcnow()
         log.status = "COMPLETED"
         log.records_processed = total_inserted
         await db.commit()
-        logger.info(f"Patents sync: {total_inserted} upserted across {len(companies)} companies")
+        logger.info(
+            f"Patents sync (Lens): {total_inserted} upserted across {len(companies)} companies"
+        )
         return total_inserted
 
     except Exception as e:
