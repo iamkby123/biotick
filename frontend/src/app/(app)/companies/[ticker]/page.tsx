@@ -1484,7 +1484,19 @@ function PatentsTab({ patents, total }: { patents: PatentRow[] | undefined; tota
   }
 
   if (patents.length === 0) {
-    return <EmptyState text="No patent data available yet." />;
+    return (
+      <div className="rounded-lg border border-border border-dashed p-16 text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-[10px] font-semibold uppercase tracking-widest mb-3">
+          Coming soon
+        </div>
+        <p className="text-sm text-foreground">Patent data is on the way</p>
+        <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
+          We&apos;re wiring up the Lens.org patent API. Full US patent
+          histories with filing, grant, and expiration dates will populate
+          here once the integration is live.
+        </p>
+      </div>
+    );
   }
 
   return (
