@@ -18,3 +18,5 @@ slowapi>=0.1.9
 # [crypto] pulls in `cryptography` — needed for ES256/RS256 JWT verification
 # against Supabase's asymmetric signing keys.
 PyJWT[crypto]>=2.8.0
+# RSS feed parsing for the biotech news sync.
+feedparser>=6.0.11

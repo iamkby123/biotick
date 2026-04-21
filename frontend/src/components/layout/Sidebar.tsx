@@ -20,6 +20,7 @@ import {
   History,
   Users,
   Grid3x3,
+  Newspaper,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -42,6 +43,12 @@ const navSections = [
       { href: "/pdufa", label: "PDUFA Dates", icon: Pill },
       { href: "/competitors", label: "Competitors", icon: Grid3x3 },
       { href: "/historical", label: "Historical", icon: History },
+    ],
+  },
+  {
+    label: "Edge",
+    items: [
+      { href: "/news", label: "News", icon: Newspaper },
     ],
   },
   {

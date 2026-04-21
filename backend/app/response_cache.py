@@ -40,6 +40,7 @@ CACHE_RULES: list[tuple[str, int]] = [
     ("/api/catalysts",            60),
     ("/api/trials",              120),
     ("/api/competitors",         300),
+    ("/api/news",                120),
     # Health + misc
     ("/api/health",               10),  # short — mainly smooths load tests
 ]

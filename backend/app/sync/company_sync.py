@@ -16,7 +16,16 @@ from sqlalchemy import select, func
 
 from app.models.company import Company, SponsorAlias
 from app.models.sync_log import SyncLog
-from app.config import SEC_USER_AGENT, SEC_TICKERS_URL, BIOTECH_SIC_CODES
+from app.config import SEC_USER_AGENT, SEC_TICKERS_URL, BIOTECH_SIC_CODES, BIOTECH_NAME_KEYWORDS
+
+
+def _name_looks_biotech(name: str) -> bool:
+    """Secondary filter: keep a company if its name contains a biotech keyword
+    even when its SIC code is missing or in an adjacent industry."""
+    if not name:
+        return False
+    lower = name.lower()
+    return any(kw in lower for kw in BIOTECH_NAME_KEYWORDS)
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +86,10 @@ async def sync_companies(db: AsyncSession) -> int:
                 }
                 exchange = exchange_map.get(exchange, exchange)
 
-                valid_exchanges = {"NYSE", "NASDAQ"}
+                # Include NYSEARCA so biotech ETFs + a handful of biotech
+                # listings that route through NYSE Arca (eg secondary listings)
+                # aren't silently dropped.
+                valid_exchanges = {"NYSE", "NASDAQ", "NYSEARCA"}
                 if exchange not in valid_exchanges:
                     continue
 
@@ -195,32 +207,41 @@ async def enrich_companies_with_sic(db: AsyncSession) -> int:
 
         await db.commit()
 
-        # Delete non-biotech companies to keep DB lean (~1K biotech only)
+        # Keep a company if EITHER:
+        #   - its SIC code is in BIOTECH_SIC_CODES, OR
+        #   - its name contains a biotech keyword (therapeutics, biotech, etc.)
+        # This broadens coverage to biotech-adjacent names that SEC classifies
+        # under generic industries but are clearly in scope.
         delete_result = await db.execute(
             select(Company).where(
                 Company.sic_code.isnot(None),
                 Company.sic_code.notin_(BIOTECH_SIC_CODES),
             )
         )
-        non_biotech = delete_result.scalars().all()
+        non_biotech_by_sic = delete_result.scalars().all()
         deleted = 0
-        for company in non_biotech:
+        for company in non_biotech_by_sic:
+            if _name_looks_biotech(company.name):
+                # Name-based rescue: keep it even though SIC isn't on our list.
+                continue
             await db.delete(company)
             deleted += 1
         await db.commit()
-        logger.info(f"Removed {deleted} non-biotech companies")
+        logger.info(f"Removed {deleted} non-biotech companies (by SIC + name filter)")
 
-        # Also delete companies that still have no SIC (couldn't be looked up)
+        # Companies without SIC data: keep if the name looks biotech, else drop.
         no_sic_result = await db.execute(
             select(Company).where(Company.sic_code.is_(None))
         )
         no_sic = no_sic_result.scalars().all()
         deleted_no_sic = 0
         for company in no_sic:
+            if _name_looks_biotech(company.name):
+                continue
             await db.delete(company)
             deleted_no_sic += 1
         await db.commit()
-        logger.info(f"Removed {deleted_no_sic} companies with no SIC data")
+        logger.info(f"Removed {deleted_no_sic} companies with no SIC data (kept name-matched)")
 
         remaining = (await db.execute(select(func.count()).select_from(Company))).scalar()
         log.completed_at = datetime.utcnow()

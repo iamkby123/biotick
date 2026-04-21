@@ -18,6 +18,7 @@ import {
   Star,
   ArrowRight,
   Building2,
+  Newspaper,
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn, formatPrice, formatMarketCap } from "@/lib/utils";
@@ -31,6 +32,7 @@ const QUICK_LINKS = [
   { href: "/pdufa", label: "PDUFA Dates", icon: Pill, keywords: "fda approval" },
   { href: "/competitors", label: "Competitor Matrix", icon: Grid3x3, keywords: "indications" },
   { href: "/historical", label: "Historical Catalysts", icon: History, keywords: "past readouts" },
+  { href: "/news", label: "Biotech News", icon: Newspaper, keywords: "rss stat fierce endpoints articles" },
   { href: "/earnings", label: "Earnings Calendar", icon: DollarSign, keywords: "reports" },
   { href: "/insider-trades", label: "Insider Trades", icon: UserCheck, keywords: "form 4 buying selling" },
   { href: "/conferences", label: "Conferences", icon: Users, keywords: "investor day asco" },

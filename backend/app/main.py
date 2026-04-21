@@ -34,6 +34,7 @@ from app.routers import (
     patents,
     predictions,
     stripe_webhook,
+    news,
 )
 
 logging.basicConfig(
@@ -67,6 +68,17 @@ async def scheduled_filing_sync():
         logger.info(f"Scheduled filing sync: {count} filings")
     except Exception as e:
         logger.error(f"Scheduled filing sync failed: {e}")
+
+
+async def scheduled_news_sync():
+    """Pull biotech news RSS feeds every 15 min."""
+    try:
+        from app.sync.news_sync import sync_news
+        async with async_session() as db:
+            count = await sync_news(db)
+        logger.info(f"Scheduled news sync: {count} items")
+    except Exception as e:
+        logger.error(f"Scheduled news sync failed: {e}")
 
 
 async def scheduled_trial_catalyst_sync():
@@ -112,8 +124,17 @@ async def lifespan(app: FastAPI):
         id="trial_catalyst_sync",
         replace_existing=True,
     )
+    scheduler.add_job(
+        scheduled_news_sync,
+        IntervalTrigger(minutes=15),
+        id="news_sync",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("Scheduler started — prices every 30min, filings every 6h, trials daily")
+    logger.info(
+        "Scheduler started — prices every 30min, filings every 6h, "
+        "trials daily, news every 15min"
+    )
 
     yield
 
@@ -183,6 +204,7 @@ app.include_router(etfs.router)
 app.include_router(patents.router)
 app.include_router(predictions.router)
 app.include_router(stripe_webhook.router)
+app.include_router(news.router)
 
 
 @app.get("/api/health")

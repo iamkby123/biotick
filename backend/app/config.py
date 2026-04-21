@@ -29,6 +29,30 @@ SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 # ClinicalTrials.gov
 CT_GOV_BASE_URL = "https://clinicaltrials.gov/api/v2"
 
+# Company-name keywords used as a secondary filter alongside SIC codes.
+# Even if a company has no SIC code or sits in an adjacent industry, a
+# name match is strong evidence it's biotech-adjacent enough to include.
+BIOTECH_NAME_KEYWORDS = {
+    "therapeutics",
+    "biosciences",
+    "bioscience",
+    "biotech",
+    "biotechnolog",
+    "biopharm",
+    "pharma",
+    "pharmaceutic",
+    "genomics",
+    "genetic",
+    "immuno",
+    "oncology",
+    "medicines",
+    "diagnostics",
+    "clinical",
+    "vaccine",
+    "cell therapy",
+    "gene therapy",
+}
+
 # Healthcare & Biotech SIC codes
 BIOTECH_SIC_CODES = {
     # Pharma & Biotech
