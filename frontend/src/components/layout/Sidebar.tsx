@@ -21,6 +21,9 @@ import {
   Users,
   Grid3x3,
   Newspaper,
+  Megaphone,
+  Handshake,
+  TrendingUp,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -49,6 +52,9 @@ const navSections = [
     label: "Edge",
     items: [
       { href: "/news", label: "News", icon: Newspaper },
+      { href: "/press-releases", label: "Press Releases", icon: Megaphone },
+      { href: "/deals", label: "Deals", icon: Handshake },
+      { href: "/etf-flows", label: "ETF Flows", icon: TrendingUp },
     ],
   },
   {

@@ -20,3 +20,5 @@ slowapi>=0.1.9
 PyJWT[crypto]>=2.8.0
 # RSS feed parsing for the biotech news sync.
 feedparser>=6.0.11
+# HTML parsing for 8-K exhibit extraction (press releases, deals).
+beautifulsoup4>=4.12.0

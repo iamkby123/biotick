@@ -36,6 +36,9 @@ from app.routers import (
     stripe_webhook,
     news,
     short_interest,
+    etf_flows,
+    press_releases,
+    deals,
 )
 
 logging.basicConfig(
@@ -117,6 +120,28 @@ async def scheduled_patents_sync():
         logger.error(f"Scheduled patents sync failed: {e}")
 
 
+async def scheduled_etf_flows_sync():
+    """Daily ETF shares-outstanding + AUM snapshot."""
+    try:
+        from app.sync.etf_flows_sync import sync_etf_flows
+        async with async_session() as db:
+            count = await sync_etf_flows(db)
+        logger.info(f"Scheduled ETF flows sync: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled ETF flows sync failed: {e}")
+
+
+async def scheduled_eight_k_pipeline():
+    """Parse recent 8-K filings into press_releases + deals tables."""
+    try:
+        from app.sync.eight_k_pipeline import sync_eight_k_pipeline
+        async with async_session() as db:
+            count = await sync_eight_k_pipeline(db, limit=100)
+        logger.info(f"Scheduled 8-K pipeline: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled 8-K pipeline failed: {e}")
+
+
 async def scheduled_trial_catalyst_sync():
     """Sync trials and extract catalysts daily."""
     try:
@@ -182,6 +207,18 @@ async def lifespan(app: FastAPI):
         scheduled_patents_sync,
         CronTrigger(hour=4, minute=0),
         id="patents_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_etf_flows_sync,
+        CronTrigger(hour=23, minute=45),  # post-close
+        id="etf_flows_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_eight_k_pipeline,
+        CronTrigger(hour=1, minute=0),  # after overnight filing_sync
+        id="eight_k_pipeline",
         replace_existing=True,
     )
     scheduler.start()
@@ -260,6 +297,9 @@ app.include_router(predictions.router)
 app.include_router(stripe_webhook.router)
 app.include_router(news.router)
 app.include_router(short_interest.router)
+app.include_router(etf_flows.router)
+app.include_router(press_releases.router)
+app.include_router(deals.router)
 
 
 @app.get("/api/health")
