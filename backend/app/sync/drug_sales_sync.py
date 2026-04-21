@@ -130,11 +130,22 @@ async def _extract_with_claude(body_text: str) -> dict | None:
 
 
 async def _candidate_companies(db: AsyncSession, limit: int) -> list[dict]:
-    """Tickers with >=2 drugs AND at least one 10-K we haven't processed."""
+    """10-Ks worth extracting revenue from.
+
+    Prioritize larger companies (higher market cap) that are much more
+    likely to have multiple revenue-generating products. Previous
+    ORDER BY filed_date DESC picked recent 10-Ks, which skewed to
+    small pre-revenue biotechs and wasted Claude calls on filings with
+    no product revenue. Limit to companies with >= 2 drugs AND
+    market_cap >= $500M so we only spend tokens where there's likely
+    something to extract.
+    """
     rows = await db.execute(
         text("""
-            SELECT sf.ticker, sf.accession_number, sf.edgar_url, sf.filed_date
+            SELECT sf.ticker, sf.accession_number, sf.edgar_url, sf.filed_date,
+                   c.market_cap
             FROM sec_filings sf
+            JOIN companies c ON c.ticker = sf.ticker
             JOIN (
               SELECT company_ticker
               FROM drugs
@@ -144,12 +155,14 @@ async def _candidate_companies(db: AsyncSession, limit: int) -> list[dict]:
             WHERE sf.filing_type = '10-K'
               AND sf.edgar_url IS NOT NULL
               AND sf.filed_date > NOW() - INTERVAL '500 days'
+              AND c.market_cap IS NOT NULL
+              AND c.market_cap >= 500000000
               AND NOT EXISTS (
                 SELECT 1 FROM drug_sales ds
                 WHERE ds.ticker = sf.ticker
                   AND ds.source_accession = sf.accession_number
               )
-            ORDER BY sf.filed_date DESC
+            ORDER BY c.market_cap DESC NULLS LAST
             LIMIT :lim
         """),
         {"lim": limit},

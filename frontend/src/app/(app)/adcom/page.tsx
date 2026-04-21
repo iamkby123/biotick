@@ -84,10 +84,14 @@ export default function AdComPage() {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-border border-dashed p-16 text-center">
-          <CalendarIcon className="w-6 h-6 text-muted/30 mx-auto mb-2" />
-          <p className="text-sm text-muted">No advisory-committee meetings scheduled yet</p>
-          <p className="text-xs text-muted/70 mt-1">
-            The weekly scrape runs Monday 7am UTC.
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-[10px] font-semibold uppercase tracking-widest mb-3">
+            Coming soon
+          </div>
+          <p className="text-sm text-foreground">FDA AdCom data is on the way</p>
+          <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
+            FDA&apos;s CDN is aggressively fingerprinting our backend&apos;s
+            TLS handshake. We&apos;re wiring up an alternate source (OpenFDA +
+            RSS feed) — check back shortly.
           </p>
         </div>
       ) : (
