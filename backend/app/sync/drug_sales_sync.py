@@ -56,8 +56,15 @@ Rules:
 
 
 def _extract_revenue_section(html: str) -> str:
-    """Return a ~12k-char slice of 10-K HTML that likely contains the
-    revenue table. Heuristic: the first block after any of these anchors."""
+    """Return a ~25k-char slice of 10-K HTML likely to contain the revenue
+    table. 10-K bodies are typically 500k-2M chars so pasting the whole
+    thing to Claude is wasteful; this picks a relevant window.
+
+    Anchors are broadened because large pharma 10-Ks (LLY, PFE, MRK) don't
+    necessarily use "Net Product Sales" — some use "Disaggregated revenue",
+    some just list product names under a "Revenue" heading. Fall back to
+    the back half of the doc if no anchor matches (where financial
+    statements live)."""
     if not html:
         return ""
     soup = BeautifulSoup(html, "html.parser")
@@ -65,14 +72,18 @@ def _extract_revenue_section(html: str) -> str:
         t.decompose()
     text_doc = soup.get_text(separator="\n", strip=True)
 
-    # Find the first occurrence of any of these anchors; take 12k chars
-    # starting there. If none found, use the middle of the doc.
     anchors = [
         "Net Product Sales",
         "Net product revenues",
         "Product sales",
+        "Product revenue",
+        "Product revenues",
         "Disaggregation of Revenue",
+        "Disaggregated revenue",
         "Revenues by product",
+        "Revenue by Product",
+        "Worldwide Revenue",
+        "Key products",
     ]
     lowered = text_doc.lower()
     best_idx = -1
@@ -80,9 +91,12 @@ def _extract_revenue_section(html: str) -> str:
         idx = lowered.find(a.lower())
         if idx >= 0 and (best_idx < 0 or idx < best_idx):
             best_idx = idx
+    # Fall back to back half of doc — financial statements and revenue
+    # tables live in the second half, often near the F-pages.
     if best_idx < 0:
-        best_idx = max(0, len(text_doc) // 3)
-    return text_doc[best_idx : best_idx + 12_000]
+        best_idx = max(0, len(text_doc) // 2)
+    # Enlarge the window to 25k chars (~6k tokens, still cheap).
+    return text_doc[best_idx : best_idx + 25_000]
 
 
 async def _extract_with_claude(body_text: str) -> dict | None:
@@ -122,11 +136,20 @@ async def _extract_with_claude(body_text: str) -> dict | None:
     raw = "".join(blocks).strip()
     # Strip fenced code blocks if Claude ignored the "no markdown" rule
     raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL)
+    # Also try to find a JSON object inside any prose wrapper Claude adds
     try:
         return json.loads(raw)
-    except Exception as e:
-        logger.warning(f"Claude returned non-JSON: {e}: {raw[:200]}")
-        return None
+    except Exception:
+        pass
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception as e:
+            logger.warning(f"Claude JSON extraction failed: {e}: {raw[:300]}")
+            return None
+    logger.warning(f"Claude returned no JSON-looking text: {raw[:300]}")
+    return None
 
 
 async def _candidate_companies(db: AsyncSession, limit: int) -> list[dict]:
