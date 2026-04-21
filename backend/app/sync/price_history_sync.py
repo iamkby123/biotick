@@ -123,20 +123,46 @@ async def sync_price_history(
         if tickers:
             wanted = [t.upper() for t in tickers]
         else:
-            wanted = [t for (t,) in (await db.execute(select(Company.ticker))).all()]
+            # yfinance rate-limits aggressively. Scope to the top 400
+            # companies by market cap — that covers every tradable biotech
+            # anyone cares about; the long-tail penny stocks can wait.
+            wanted = [
+                t
+                for (t,) in (
+                    await db.execute(
+                        select(Company.ticker)
+                        .where(Company.market_cap.is_not(None))
+                        .order_by(Company.market_cap.desc().nullslast())
+                        .limit(400)
+                    )
+                ).all()
+            ]
 
         period = _period_for_days(days)
         total = 0
         empty_count = 0
+        rate_limited_streak = 0
 
         for ticker in wanted:
             df = await asyncio.to_thread(_fetch_candles_sync, ticker, period)
             if df is None or df.empty:
                 empty_count += 1
+                # If we get a streak of empty results, assume rate-limit and
+                # back off hard before continuing.
+                rate_limited_streak += 1
+                if rate_limited_streak >= 5:
+                    logger.warning(
+                        f"yfinance streak of {rate_limited_streak} empties "
+                        f"— backing off 30s"
+                    )
+                    await asyncio.sleep(30)
+                    rate_limited_streak = 0
             else:
                 total += await _upsert_dataframe(db, ticker, df)
-            # Be gentle with Yahoo — no explicit rate limit but they soft-throttle
-            await asyncio.sleep(0.6)
+                rate_limited_streak = 0
+            # 2.5s/ticker keeps us well under yfinance's undocumented
+            # throttle (~1 req/sec sustained is the observed ceiling).
+            await asyncio.sleep(2.5)
 
         log.completed_at = datetime.utcnow()
         log.status = "COMPLETED"
