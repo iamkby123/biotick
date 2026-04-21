@@ -95,16 +95,32 @@ async def sync_etf_flows(db: AsyncSession) -> int:
                 quote = await _fetch_quote(client, t)
                 await asyncio.sleep(1.05)
 
-                if not profile:
-                    continue
+                # Finnhub ETF profile field names (vary by tier — free tier
+                # often has profile endpoint returning empty {}). Fall back
+                # to /quote for NAV which definitely works on free tier.
+                profile = profile or {}
+                nested = profile.get("profile") if isinstance(profile.get("profile"), dict) else profile
 
-                # Finnhub ETF profile field names
-                #   "sharesOutstanding", "totalAssets", "nav"
-                shares = profile.get("sharesOutstanding")
-                aum = profile.get("totalAssets") or profile.get("aum")
-                nav = profile.get("nav") or (quote.get("c") if quote else None)
+                shares = (
+                    nested.get("sharesOutstanding")
+                    or nested.get("shareOutstanding")
+                    or nested.get("shares_outstanding")
+                )
+                aum = (
+                    nested.get("totalAssets")
+                    or nested.get("aum")
+                    or nested.get("totalAum")
+                )
+                nav = (
+                    nested.get("nav")
+                    or (quote.get("c") if quote else None)
+                )
 
-                if shares is None and aum is None:
+                # Even if profile is empty we still want a daily NAV row so
+                # the chart has SOMETHING to show. Only skip if NAV is also
+                # missing (true zero-data case).
+                if nav is None and aum is None and shares is None:
+                    logger.warning(f"ETF {t}: no profile data at all")
                     continue
 
                 # Find the previous row to compute delta

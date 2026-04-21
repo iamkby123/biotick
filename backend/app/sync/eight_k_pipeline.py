@@ -107,10 +107,20 @@ async def _maybe_summarize(body: str, headline: str) -> str | None:
 # ─── EDGAR fetchers ──────────────────────────────────────────────────────
 
 
-async def _fetch_index(client: httpx.AsyncClient, edgar_url: str) -> str | None:
+def _derive_directory(edgar_url: str) -> str:
+    """sec_filings.edgar_url points to the primary 8-K HTML doc, not the
+    filing index. Strip the filename to get the directory URL which
+    EDGAR serves as an auto-index page listing every file in the filing."""
+    if edgar_url.endswith("/"):
+        return edgar_url
+    # https://.../000119312526164330/d120122d8k.htm  -> ...000119312526164330/
+    return edgar_url.rsplit("/", 1)[0] + "/"
+
+
+async def _fetch_text(client: httpx.AsyncClient, url: str) -> str | None:
     try:
         resp = await client.get(
-            edgar_url,
+            url,
             headers={"User-Agent": SEC_USER_AGENT},
             timeout=20,
             follow_redirects=True,
@@ -119,13 +129,21 @@ async def _fetch_index(client: httpx.AsyncClient, edgar_url: str) -> str | None:
             return None
         return resp.text
     except Exception as e:
-        logger.warning(f"index fetch {edgar_url}: {e}")
+        logger.warning(f"fetch {url}: {e}")
         return None
 
 
+async def _fetch_index(client: httpx.AsyncClient, edgar_url: str) -> str | None:
+    """Fetch the directory-listing HTML for a filing. Takes the primary-doc
+    URL and derives the directory URL which EDGAR auto-indexes."""
+    directory = _derive_directory(edgar_url)
+    return await _fetch_text(client, directory)
+
+
 def _find_exhibits(html: str, base_url: str) -> list[dict]:
-    """Given the 8-K index page HTML, return list of {name, href} for
-    the main 8-K doc + Ex-99 attachments."""
+    """Given the filing directory HTML (EDGAR auto-index), return
+    [{name, href}] for the main 8-K doc + Ex-99 attachments. The directory
+    index lists every filename with a link; we match by filename."""
     soup = BeautifulSoup(html, "html.parser")
     out: list[dict] = []
     for a in soup.find_all("a", href=True):
@@ -133,10 +151,18 @@ def _find_exhibits(html: str, base_url: str) -> list[dict]:
         if not href.lower().endswith((".htm", ".html", ".txt")):
             continue
         name = a.get_text(strip=True) or href.rsplit("/", 1)[-1]
-        # Include main 8-K body + Ex-99.* attachments
-        if re.search(r"(8[\-]?k|ex[\-_\s]?99|exhibit\s*99)", name, re.IGNORECASE) or \
-           re.search(r"(8[\-]?k|ex[\-_\s]?99|exhibit\s*99)", href, re.IGNORECASE):
-            out.append({"name": name, "href": urljoin(base_url, href)})
+        fname = href.rsplit("/", 1)[-1].lower()
+        # Match: 8-k bodies (d*-8k.htm, form8-k.htm, *8k*.htm, *aldx-*.htm
+        # where 8-K tickers appear), OR exhibit 99.1/99.2 attachments.
+        if (
+            "8k" in fname
+            or "8-k" in fname
+            or "ex99" in fname
+            or "ex-99" in fname
+            or "exhibit" in fname
+            or "exhibit99" in fname
+        ):
+            out.append({"name": name or fname, "href": urljoin(base_url, href)})
     return out
 
 
@@ -224,26 +250,24 @@ async def sync_eight_k_pipeline(db: AsyncSession, limit: int = 100) -> int:
         async with httpx.AsyncClient() as client:
             for f in batch:
                 try:
-                    # Step 1: fetch the filing index
+                    # Step 1: fetch the filing's directory index
                     html = await _fetch_index(client, f["edgar_url"])
                     await asyncio.sleep(0.15)
-                    if not html:
-                        continue
 
-                    # Step 2: enumerate exhibits
-                    exhibits = _find_exhibits(html, f["edgar_url"])
-                    if not exhibits:
-                        continue
-
-                    # Step 3: fetch main 8-K doc to read Item codes. Heuristic:
-                    # the first .htm exhibit whose name looks like the 8-K body.
-                    main_doc = None
+                    # Step 2: always treat the primary edgar_url as the main
+                    # 8-K doc (it IS one by construction — sec_filings stores
+                    # the primary-doc link). Additionally scan the directory
+                    # listing for Ex-99 press-release attachments.
+                    main_doc = {
+                        "name": f["edgar_url"].rsplit("/", 1)[-1],
+                        "href": f["edgar_url"],
+                    }
                     pr_docs: list[dict] = []
-                    for e in exhibits:
-                        if re.search(r"ex[\-_\s]?99|exhibit\s*99", e["name"], re.IGNORECASE):
-                            pr_docs.append(e)
-                        elif main_doc is None:
-                            main_doc = e
+                    if html:
+                        for e in _find_exhibits(html, _derive_directory(f["edgar_url"])):
+                            fname = e["href"].rsplit("/", 1)[-1].lower()
+                            if "ex99" in fname or "ex-99" in fname or "exhibit99" in fname:
+                                pr_docs.append(e)
 
                     item_codes: set[str] = set()
                     if main_doc:

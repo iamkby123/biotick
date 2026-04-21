@@ -88,7 +88,15 @@ async def sync_fda_adcom(db: AsyncSession) -> int:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 _CALENDAR_URL,
-                headers={"User-Agent": SEC_USER_AGENT},
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
                 timeout=20,
                 follow_redirects=True,
             )
@@ -126,7 +134,15 @@ async def sync_fda_adcom(db: AsyncSession) -> int:
                 try:
                     page = await client.get(
                         href,
-                        headers={"User-Agent": SEC_USER_AGENT},
+                        headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
                         timeout=15,
                         follow_redirects=True,
                     )
