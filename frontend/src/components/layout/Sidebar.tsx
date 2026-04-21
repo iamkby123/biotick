@@ -24,6 +24,7 @@ import {
   Megaphone,
   Handshake,
   TrendingUp,
+  Landmark,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -44,6 +45,7 @@ const navSections = [
     items: [
       { href: "/catalysts", label: "Calendar", icon: Calendar },
       { href: "/pdufa", label: "PDUFA Dates", icon: Pill },
+      { href: "/adcom", label: "AdCom", icon: Users },
       { href: "/competitors", label: "Competitors", icon: Grid3x3 },
       { href: "/historical", label: "Historical", icon: History },
     ],
@@ -55,6 +57,7 @@ const navSections = [
       { href: "/press-releases", label: "Press Releases", icon: Megaphone },
       { href: "/deals", label: "Deals", icon: Handshake },
       { href: "/etf-flows", label: "ETF Flows", icon: TrendingUp },
+      { href: "/congress-trades", label: "Congress Trades", icon: Landmark },
     ],
   },
   {

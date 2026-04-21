@@ -22,6 +22,7 @@ import {
   Megaphone,
   Handshake,
   TrendingUp,
+  Landmark,
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn, formatPrice, formatMarketCap } from "@/lib/utils";
@@ -39,6 +40,8 @@ const QUICK_LINKS = [
   { href: "/press-releases", label: "Press Releases", icon: Megaphone, keywords: "8k announcements pr" },
   { href: "/deals", label: "Deals", icon: Handshake, keywords: "m&a acquisitions partnerships material agreements officer changes" },
   { href: "/etf-flows", label: "ETF Flows", icon: TrendingUp, keywords: "xbi ibb creations redemptions" },
+  { href: "/adcom", label: "FDA AdCom", icon: Users, keywords: "advisory committee meeting fda approval" },
+  { href: "/congress-trades", label: "Congress Trades", icon: Landmark, keywords: "house senate ptr politician stock act" },
   { href: "/earnings", label: "Earnings Calendar", icon: DollarSign, keywords: "reports" },
   { href: "/insider-trades", label: "Insider Trades", icon: UserCheck, keywords: "form 4 buying selling" },
   { href: "/conferences", label: "Conferences", icon: Users, keywords: "investor day asco" },

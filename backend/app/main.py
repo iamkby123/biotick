@@ -39,6 +39,9 @@ from app.routers import (
     etf_flows,
     press_releases,
     deals,
+    adcom,
+    congress_trades,
+    drug_sales,
 )
 
 logging.basicConfig(
@@ -142,6 +145,39 @@ async def scheduled_eight_k_pipeline():
         logger.error(f"Scheduled 8-K pipeline failed: {e}")
 
 
+async def scheduled_fda_adcom_sync():
+    """Weekly scrape of the FDA AdCom calendar."""
+    try:
+        from app.sync.fda_adcom_sync import sync_fda_adcom
+        async with async_session() as db:
+            count = await sync_fda_adcom(db)
+        logger.info(f"Scheduled FDA AdCom: {count} meetings")
+    except Exception as e:
+        logger.error(f"Scheduled FDA AdCom failed: {e}")
+
+
+async def scheduled_congress_trades_sync():
+    """Daily US House PTR ingest."""
+    try:
+        from app.sync.congress_trades_sync import sync_congress_trades
+        async with async_session() as db:
+            count = await sync_congress_trades(db)
+        logger.info(f"Scheduled congress trades: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled congress trades failed: {e}")
+
+
+async def scheduled_drug_sales_sync():
+    """Weekly Claude-backed drug sales extraction from 10-Ks."""
+    try:
+        from app.sync.drug_sales_sync import sync_drug_sales
+        async with async_session() as db:
+            count = await sync_drug_sales(db, limit=25)
+        logger.info(f"Scheduled drug sales: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled drug sales failed: {e}")
+
+
 async def scheduled_trial_catalyst_sync():
     """Sync trials and extract catalysts daily."""
     try:
@@ -219,6 +255,24 @@ async def lifespan(app: FastAPI):
         scheduled_eight_k_pipeline,
         CronTrigger(hour=1, minute=0),  # after overnight filing_sync
         id="eight_k_pipeline",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_fda_adcom_sync,
+        CronTrigger(day_of_week="mon", hour=7, minute=0),
+        id="fda_adcom_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_congress_trades_sync,
+        CronTrigger(hour=8, minute=0),
+        id="congress_trades_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_drug_sales_sync,
+        CronTrigger(day_of_week="sat", hour=6, minute=0),
+        id="drug_sales_sync",
         replace_existing=True,
     )
     scheduler.start()
@@ -300,6 +354,9 @@ app.include_router(short_interest.router)
 app.include_router(etf_flows.router)
 app.include_router(press_releases.router)
 app.include_router(deals.router)
+app.include_router(adcom.router)
+app.include_router(congress_trades.router)
+app.include_router(drug_sales.router)
 
 
 @app.get("/api/health")

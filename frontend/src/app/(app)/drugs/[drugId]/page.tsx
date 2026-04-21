@@ -15,6 +15,7 @@ import {
   THERAPEUTIC_AREA_COLORS,
 } from "@/lib/constants";
 import { FactorSummaryBadge, useBatchFactors } from "@/components/TrialFactors";
+import { DrugRevenueChart } from "@/components/DrugRevenueChart";
 
 export default function DrugDetailPage({
   params,
@@ -203,6 +204,9 @@ export default function DrugDetailPage({
           </div>
         </div>
       )}
+
+      {/* Annual revenue (from 10-K extraction). Silently hides if no data. */}
+      <DrugRevenueChart ticker={drug.company_ticker} drugName={drug.drug_name} />
 
       {/* Trials */}
       <div>
