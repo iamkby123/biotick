@@ -238,17 +238,25 @@ async def sync_drug_sales(db: AsyncSession, limit: int = 10) -> int:
                     body_html = await _fetch_10k_body(client, f["edgar_url"])
                     await asyncio.sleep(0.2)
                     if not body_html:
+                        logger.info(f"drug_sales {f['ticker']}: empty 10-K body")
                         continue
                     excerpt = _extract_revenue_section(body_html)
                     if not excerpt:
+                        logger.info(f"drug_sales {f['ticker']}: empty revenue section")
                         continue
                     parsed = await _extract_with_claude(excerpt)
                     if not parsed:
+                        logger.info(f"drug_sales {f['ticker']}: Claude returned no JSON")
                         continue
                     fy = parsed.get("fiscal_year")
+                    drugs_list = parsed.get("drugs") or []
+                    logger.info(
+                        f"drug_sales {f['ticker']}: Claude parsed fy={fy}, "
+                        f"drugs={len(drugs_list)}"
+                    )
                     if not isinstance(fy, int):
                         continue
-                    for d in (parsed.get("drugs") or []):
+                    for d in drugs_list:
                         name = (d.get("name") or "").strip()
                         rev = d.get("revenue_usd")
                         if not name or not isinstance(rev, (int, float)) or rev <= 0:
