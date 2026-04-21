@@ -20,6 +20,16 @@ from app.sync.finnhub_sync import sync_prices_finnhub, sync_financials_finnhub
 from app.sync.drug_normalizer import normalize_all_drugs
 from app.sync.fda_calendar_sync import sync_fda_approvals
 from app.sync.sec_financials_sync import sync_sec_financials
+# Phase A-D data expansion syncs
+from app.sync.news_sync import sync_news
+from app.sync.short_interest_sync import sync_short_interest
+from app.sync.patents_sync import sync_patents
+from app.sync.price_history_sync import sync_price_history
+from app.sync.etf_flows_sync import sync_etf_flows
+from app.sync.eight_k_pipeline import sync_eight_k_pipeline
+from app.sync.fda_adcom_sync import sync_fda_adcom
+from app.sync.congress_trades_sync import sync_congress_trades
+from app.sync.drug_sales_sync import sync_drug_sales
 
 logger = logging.getLogger(__name__)
 
@@ -298,4 +308,106 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
     return {
         "syncs": list(latest.values()),
         "currently_running": list(_running_syncs),
+    }
+
+
+# ── Phase A-D admin triggers ─────────────────────────────────────────
+# Each of the new syncs gets a POST endpoint so we can kick off the
+# initial backfill without waiting for the nightly cron. All are gated
+# by X-Admin-Key at the router level.
+
+@router.post("/news")
+async def trigger_news_sync(background_tasks: BackgroundTasks):
+    if "NEWS" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(_run_sync_in_background, "NEWS", sync_news)
+    return {"status": "started", "message": "News RSS sync started in background."}
+
+
+@router.post("/short-interest")
+async def trigger_short_interest(background_tasks: BackgroundTasks, days: int = 14):
+    if "SHORT_INTEREST" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(
+        _run_sync_in_background, "SHORT_INTEREST", sync_short_interest, days=days
+    )
+    return {"status": "started", "message": f"FINRA short-interest backfill ({days}d) started."}
+
+
+@router.post("/patents")
+async def trigger_patents(background_tasks: BackgroundTasks, limit_companies: int = 200):
+    if "PATENTS" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(
+        _run_sync_in_background, "PATENTS", sync_patents, limit_companies=limit_companies
+    )
+    return {
+        "status": "started",
+        "message": f"Lens.org patents backfill started ({limit_companies} companies).",
+    }
+
+
+@router.post("/price-history")
+async def trigger_price_history(background_tasks: BackgroundTasks, days: int = 365):
+    """Backfill historical OHLCV candles. Pass days=1825 for full 5y backfill."""
+    if "PRICE_HISTORY" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(
+        _run_sync_in_background, "PRICE_HISTORY", sync_price_history, days=days
+    )
+    return {
+        "status": "started",
+        "message": f"Finnhub price-history backfill ({days}d) started.",
+    }
+
+
+@router.post("/etf-flows")
+async def trigger_etf_flows(background_tasks: BackgroundTasks):
+    if "ETF_FLOWS" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(_run_sync_in_background, "ETF_FLOWS", sync_etf_flows)
+    return {"status": "started", "message": "ETF flow snapshot started."}
+
+
+@router.post("/eight-k")
+async def trigger_eight_k_pipeline(background_tasks: BackgroundTasks, limit: int = 200):
+    """Parse 8-K filings into press_releases + deals. ANTHROPIC_API_KEY
+    must be set for summaries; otherwise rows get raw-text bodies only."""
+    if "EIGHT_K_PIPELINE" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(
+        _run_sync_in_background, "EIGHT_K_PIPELINE", sync_eight_k_pipeline, limit=limit
+    )
+    return {"status": "started", "message": f"8-K pipeline backfill ({limit} filings) started."}
+
+
+@router.post("/fda-adcom")
+async def trigger_fda_adcom(background_tasks: BackgroundTasks):
+    if "FDA_ADCOM" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(_run_sync_in_background, "FDA_ADCOM", sync_fda_adcom)
+    return {"status": "started", "message": "FDA Advisory Committee calendar scrape started."}
+
+
+@router.post("/congress-trades")
+async def trigger_congress_trades(background_tasks: BackgroundTasks):
+    if "CONGRESS_TRADES" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(
+        _run_sync_in_background, "CONGRESS_TRADES", sync_congress_trades
+    )
+    return {"status": "started", "message": "US House PTR ingest started."}
+
+
+@router.post("/drug-sales")
+async def trigger_drug_sales(background_tasks: BackgroundTasks, limit: int = 25):
+    """Claude-backed extraction from 10-Ks. Costs ~$0.03 per filing."""
+    if "DRUG_SALES" in _running_syncs:
+        return {"status": "already_running"}
+    background_tasks.add_task(
+        _run_sync_in_background, "DRUG_SALES", sync_drug_sales, limit=limit
+    )
+    return {
+        "status": "started",
+        "message": f"Drug-sales extraction started ({limit} 10-Ks, ~${limit * 0.03:.2f} budget).",
     }
