@@ -35,6 +35,7 @@ from app.routers import (
     predictions,
     stripe_webhook,
     news,
+    short_interest,
 )
 
 logging.basicConfig(
@@ -79,6 +80,41 @@ async def scheduled_news_sync():
         logger.info(f"Scheduled news sync: {count} items")
     except Exception as e:
         logger.error(f"Scheduled news sync failed: {e}")
+
+
+async def scheduled_short_interest_sync():
+    """Daily FINRA short-sale volume pull (7 business days lookback)."""
+    try:
+        from app.sync.short_interest_sync import sync_short_interest
+        async with async_session() as db:
+            count = await sync_short_interest(db, days=7)
+        logger.info(f"Scheduled short-interest sync: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled short-interest sync failed: {e}")
+
+
+async def scheduled_price_history_sync():
+    """Daily top-up of historical price candles (last 7 days)."""
+    try:
+        from app.sync.price_history_sync import sync_price_history
+        async with async_session() as db:
+            count = await sync_price_history(db, days=7)
+        logger.info(f"Scheduled price history sync: {count} candles")
+    except Exception as e:
+        logger.error(f"Scheduled price history sync failed: {e}")
+
+
+async def scheduled_patents_sync():
+    """Daily patents refresh via PatentsView (top N companies)."""
+    try:
+        from app.sync.patents_sync import sync_patents
+        async with async_session() as db:
+            # Process 300 companies per night to spread PatentsView load;
+            # full universe rotates every ~3-4 days.
+            count = await sync_patents(db, limit_companies=300)
+        logger.info(f"Scheduled patents sync: {count} patents")
+    except Exception as e:
+        logger.error(f"Scheduled patents sync failed: {e}")
 
 
 async def scheduled_trial_catalyst_sync():
@@ -128,6 +164,24 @@ async def lifespan(app: FastAPI):
         scheduled_news_sync,
         IntervalTrigger(minutes=15),
         id="news_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_short_interest_sync,
+        CronTrigger(hour=9, minute=30),  # FINRA files publish overnight
+        id="short_interest_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_price_history_sync,
+        CronTrigger(hour=23, minute=15),  # post-close top-up
+        id="price_history_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_patents_sync,
+        CronTrigger(hour=4, minute=0),
+        id="patents_sync",
         replace_existing=True,
     )
     scheduler.start()
@@ -205,6 +259,7 @@ app.include_router(patents.router)
 app.include_router(predictions.router)
 app.include_router(stripe_webhook.router)
 app.include_router(news.router)
+app.include_router(short_interest.router)
 
 
 @app.get("/api/health")

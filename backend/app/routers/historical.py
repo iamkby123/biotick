@@ -10,6 +10,7 @@ from math import ceil
 
 from app.database import get_db
 from app.models.catalyst import Catalyst
+from app.models.price_history import PriceHistory
 from app.cache.memory_cache import cache
 
 logger = logging.getLogger(__name__)
@@ -80,4 +81,58 @@ async def get_historical_catalysts(
         "page": page,
         "per_page": per_page,
         "total_pages": ceil(total / per_page) if total > 0 else 0,
+    }
+
+
+# ── Historical price candles ───────────────────────────────────────────
+
+# Allowed ranges mapped to day counts. Keep these on the backend so the
+# frontend can only pick from well-known buckets that we've indexed for.
+_RANGE_DAYS = {
+    "1m": 31,
+    "3m": 93,
+    "6m": 186,
+    "1y": 365,
+    "2y": 730,
+    "5y": 1825,
+    "all": 3650,
+}
+
+
+@router.get("/prices/{ticker}")
+async def get_price_history(
+    ticker: str,
+    range: str = Query("1y", description=f"One of {list(_RANGE_DAYS.keys())}"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daily OHLCV candles for a ticker over a fixed range.
+
+    Returns candles sorted oldest-first so a chart library can plot directly.
+    """
+    ticker = ticker.upper()
+    days = _RANGE_DAYS.get(range, 365)
+    cutoff = date.today() - timedelta(days=days)
+
+    rows = (
+        await db.execute(
+            select(PriceHistory)
+            .where(PriceHistory.ticker == ticker, PriceHistory.date >= cutoff)
+            .order_by(PriceHistory.date.asc())
+        )
+    ).scalars().all()
+
+    return {
+        "ticker": ticker,
+        "range": range,
+        "candles": [
+            {
+                "date": r.date.isoformat(),
+                "open": float(r.open) if r.open is not None else None,
+                "high": float(r.high) if r.high is not None else None,
+                "low": float(r.low) if r.low is not None else None,
+                "close": float(r.close) if r.close is not None else None,
+                "volume": float(r.volume) if r.volume is not None else None,
+            }
+            for r in rows
+        ],
     }
