@@ -108,13 +108,21 @@ async def sync_fda_adcom(db: AsyncSession) -> int:
     try:
         written = 0
         async with httpx.AsyncClient() as client:
-            # Pull the most recent 200 advisory-committee notices
+            # Pull the most recent 200 advisory-committee notices.
+            # fields[]=dates is REQUIRED — without it the list endpoint
+            # omits the `dates` field (where the meeting date lives).
             params = [
                 ("conditions[type][]", "NOTICE"),
                 ("conditions[term]", "advisory committee meeting"),
                 ("conditions[agencies][]", "food-and-drug-administration"),
                 ("per_page", "200"),
                 ("order", "newest"),
+                ("fields[]", "title"),
+                ("fields[]", "publication_date"),
+                ("fields[]", "dates"),
+                ("fields[]", "abstract"),
+                ("fields[]", "html_url"),
+                ("fields[]", "document_number"),
             ]
             try:
                 resp = await client.get(_API_URL, params=params, timeout=30)
