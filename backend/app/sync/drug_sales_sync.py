@@ -99,8 +99,24 @@ def _extract_revenue_section(html: str) -> str:
     return text_doc[best_idx : best_idx + 25_000]
 
 
+# Set to True once we see a "credit balance too low" 400. Aborts the
+# rest of the run — no point fetching 10-Ks we can't extract.
+_claude_credits_exhausted = False
+
+
+class _ClaudeCreditsExhausted(Exception):
+    """Raised to abort the drug_sales loop cleanly when Claude credit is gone."""
+
+
 async def _extract_with_claude(body_text: str) -> dict | None:
-    """Call Claude, return parsed dict or None on any failure."""
+    """Call Claude, return parsed dict or None on any failure.
+
+    Raises _ClaudeCreditsExhausted if the API reports the account is out
+    of credits — caller should short-circuit the entire run.
+    """
+    global _claude_credits_exhausted
+    if _claude_credits_exhausted:
+        raise _ClaudeCreditsExhausted()
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key or not body_text:
         return None
@@ -129,6 +145,13 @@ async def _extract_with_claude(body_text: str) -> dict | None:
             ],
         )
     except Exception as e:
+        err = str(e)
+        if "credit balance is too low" in err or "insufficient_quota" in err.lower():
+            _claude_credits_exhausted = True
+            logger.warning(
+                "Claude credit balance exhausted — aborting drug_sales run."
+            )
+            raise _ClaudeCreditsExhausted() from e
         logger.warning(f"Claude drug-sales call failed: {e}")
         return None
 
@@ -267,7 +290,16 @@ async def sync_drug_sales(db: AsyncSession, limit: int = 10) -> int:
                     if not excerpt:
                         logger.info(f"drug_sales {f['ticker']}: empty revenue section")
                         continue
-                    parsed = await _extract_with_claude(excerpt)
+                    try:
+                        parsed = await _extract_with_claude(excerpt)
+                    except _ClaudeCreditsExhausted:
+                        # No point iterating the rest of the batch — every call
+                        # will return the same 400. Break out and let the
+                        # sync_log reflect whatever we got before the wall.
+                        logger.warning(
+                            "drug_sales aborting: Claude credits exhausted"
+                        )
+                        break
                     if not parsed:
                         logger.info(f"drug_sales {f['ticker']}: Claude returned no JSON")
                         continue

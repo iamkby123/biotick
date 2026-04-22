@@ -63,9 +63,18 @@ Rules:
 - Keep each sentence <= 35 words.
 """
 
+# Set to True once we observe a "credit balance too low" 400 from the
+# Anthropic API. Once tripped, we stop calling Claude for the rest of
+# the process lifetime — no point burning HTTP round-trips to get the
+# same 400 back for every filing. Reset requires a process restart.
+_claude_credits_exhausted = False
+
 
 async def _maybe_summarize(body: str, headline: str) -> str | None:
     """Call Claude for a 2-sentence summary. Returns None if no key set or error."""
+    global _claude_credits_exhausted
+    if _claude_credits_exhausted:
+        return None
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key or not body:
         return None
@@ -100,7 +109,15 @@ async def _maybe_summarize(body: str, headline: str) -> str | None:
         blocks = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
         return ("".join(blocks).strip() or None)
     except Exception as e:
-        logger.warning(f"Claude summary failed: {e}")
+        err = str(e)
+        if "credit balance is too low" in err or "insufficient_quota" in err.lower():
+            _claude_credits_exhausted = True
+            logger.warning(
+                "Claude credit balance exhausted — disabling summaries for "
+                "the rest of this process. Add credits at console.anthropic.com."
+            )
+        else:
+            logger.warning(f"Claude summary failed: {e}")
         return None
 
 

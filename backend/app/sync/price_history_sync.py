@@ -1,26 +1,29 @@
-"""Backfill + incremental sync of daily OHLCV via yfinance.
+"""Backfill + incremental sync of daily OHLCV.
 
-We originally used Finnhub's /stock/candle endpoint, but that's a paid
-feature — on the free tier it returns 403 "You don't have access to
-this resource". yfinance (already installed for the Finnhub fallback
-path elsewhere) is free and has no daily rate limit, just slows down
-under hammering.
+History of this file:
+1. Originally Finnhub's /stock/candle — 403 on free tier.
+2. Pivoted to yfinance — Yahoo rate-limits Fly.io's datacenter IP range
+   with `YFRateLimitError: Too Many Requests` on the FIRST request from
+   Fly. yfinance is a dead end in production.
+3. Tried Stooq — now requires a captcha-gated API key as of 2025.
+4. Now: Polygon.io (free tier — 5 req/min, 2y history). User must set
+   POLYGON_API_KEY in Fly secrets. Without it, the sync no-ops cleanly
+   so the daily cron doesn't spam errors.
 
-Strategy:
-  - For each ticker, call Ticker(sym).history(period=..., auto_adjust=False)
-  - Convert rows to (date, open, high, low, close, volume) and upsert.
-  - Throttle ~0.6s between tickers to be nice to Yahoo.
-  - Backfill = 365d by default; daily cron passes days=7.
+Polygon free-tier endpoint:
+  GET /v2/aggs/ticker/{ticker}/range/1/day/{from}/{to}?apiKey=...
+Returns: {results: [{t: ms, o, h, l, c, v}, ...]}
 
-yfinance is occasionally flaky (429s, empty frames). We tolerate those:
-log the ticker, skip, keep going. No hard failure unless half the batch
-fails.
+Rate limit: 5 req/min. 500 tickers = 100 minutes. We pace ~13s between
+calls to stay under it.
 """
 
 import asyncio
 import logging
+import os
 from datetime import datetime, date, timedelta
 
+import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -32,55 +35,91 @@ from app.models.sync_log import SyncLog
 logger = logging.getLogger(__name__)
 
 
-def _period_for_days(days: int) -> str:
-    """Map day counts to yfinance period strings (they accept fixed labels
-    like '1y' / '5y' more efficiently than explicit date ranges)."""
-    if days <= 7:
-        return "1mo"
-    if days <= 31:
-        return "1mo"
-    if days <= 93:
-        return "3mo"
-    if days <= 186:
-        return "6mo"
-    if days <= 365:
-        return "1y"
-    if days <= 730:
-        return "2y"
-    return "5y"
+_POLYGON_BASE = "https://api.polygon.io"
 
 
-def _fetch_candles_sync(ticker: str, period: str):
-    """Run yfinance in a thread (it's blocking / requests-based)."""
-    try:
-        import yfinance as yf
+def _polygon_key() -> str:
+    return os.environ.get("POLYGON_API_KEY", "").strip()
 
-        t = yf.Ticker(ticker)
-        df = t.history(period=period, auto_adjust=False, actions=False)
-        return df
-    except Exception as e:
-        logger.warning(f"yfinance {ticker} error: {e}")
+
+async def _fetch_candles_polygon(
+    client: httpx.AsyncClient, ticker: str, days: int
+) -> list[dict] | None:
+    """Download Polygon.io daily-aggregate OHLCV for one ticker.
+
+    Returns a list of {date, open, high, low, close, volume} dicts or None
+    on failure / empty / rate-limit.
+    """
+    key = _polygon_key()
+    if not key:
         return None
-
-
-async def _upsert_dataframe(db: AsyncSession, ticker: str, df) -> int:
-    """Upsert a yfinance DataFrame for one ticker. Returns row count."""
-    if df is None or df.empty:
-        return 0
-    batch = 0
-    for idx, row in df.iterrows():
+    today = date.today()
+    d1 = today - timedelta(days=days)
+    url = (
+        f"{_POLYGON_BASE}/v2/aggs/ticker/{ticker.upper()}"
+        f"/range/1/day/{d1.isoformat()}/{today.isoformat()}"
+    )
+    try:
+        resp = await client.get(
+            url,
+            params={"apiKey": key, "adjusted": "true", "sort": "asc", "limit": 5000},
+            timeout=20,
+        )
+    except Exception as e:
+        logger.warning(f"polygon {ticker}: {e}")
+        return None
+    if resp.status_code == 429:
+        # Free tier is 5 req/min. If we hit a 429 our pacing is off —
+        # back off hard and let the next iteration retry.
+        logger.warning(f"polygon {ticker}: 429, sleeping 60s")
+        await asyncio.sleep(60)
+        return None
+    if resp.status_code != 200:
+        logger.warning(f"polygon {ticker}: HTTP {resp.status_code}")
+        return None
+    try:
+        data = resp.json() or {}
+    except Exception:
+        return None
+    results = data.get("results") or []
+    rows: list[dict] = []
+    for r in results:
         try:
-            # idx is a pandas Timestamp — convert to date
-            d = idx.date() if hasattr(idx, "date") else date.today()
+            ts = r.get("t")  # ms timestamp
+            if not ts:
+                continue
+            d = datetime.utcfromtimestamp(ts / 1000).date()
+            rows.append({
+                "date": d,
+                "open": r.get("o"),
+                "high": r.get("h"),
+                "low": r.get("l"),
+                "close": r.get("c"),
+                "volume": r.get("v"),
+            })
+        except Exception:
+            continue
+    return rows
+
+
+async def _upsert_candles(
+    db: AsyncSession, ticker: str, rows: list[dict]
+) -> int:
+    """Upsert parsed rows for one ticker. Returns row count."""
+    if not rows:
+        return 0
+    written = 0
+    for r in rows:
+        try:
             async with db.begin_nested():
                 stmt = pg_upsert(PriceHistory).values(
                     ticker=ticker,
-                    date=d,
-                    open=float(row["Open"]) if row.get("Open") is not None else None,
-                    high=float(row["High"]) if row.get("High") is not None else None,
-                    low=float(row["Low"]) if row.get("Low") is not None else None,
-                    close=float(row["Close"]) if row.get("Close") is not None else None,
-                    volume=float(row["Volume"]) if row.get("Volume") is not None else None,
+                    date=r["date"],
+                    open=r["open"],
+                    high=r["high"],
+                    low=r["low"],
+                    close=r["close"],
+                    volume=r["volume"],
                 )
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["ticker", "date"],
@@ -93,14 +132,14 @@ async def _upsert_dataframe(db: AsyncSession, ticker: str, df) -> int:
                     },
                 )
                 await db.execute(stmt)
-            batch += 1
-            if batch % 200 == 0:
+            written += 1
+            if written % 200 == 0:
                 await db.commit()
         except Exception as e:
             logger.warning(f"{ticker} candle row error: {e}")
             continue
     await db.commit()
-    return batch
+    return written
 
 
 async def sync_price_history(
@@ -110,8 +149,11 @@ async def sync_price_history(
 ) -> int:
     """Pull the last `days` of daily candles for every company (or subset).
 
-    `days=1825` triggers a 5y backfill via yfinance's `5y` period.
-    Daily cron uses days=7 to top up without reprocessing.
+    `days=1825` = 5y backfill. Daily cron uses days=7 to top up without
+    reprocessing old data.
+
+    Requires POLYGON_API_KEY env var. Without it this is a no-op that
+    exits cleanly (so the daily scheduler doesn't spam FAILED entries).
     """
     log = SyncLog(
         sync_type="PRICE_HISTORY", started_at=datetime.utcnow(), status="RUNNING"
@@ -120,12 +162,24 @@ async def sync_price_history(
     await db.commit()
 
     try:
+        if not _polygon_key():
+            log.completed_at = datetime.utcnow()
+            log.status = "COMPLETED"
+            log.records_processed = 0
+            log.error_message = "POLYGON_API_KEY not set — skipped"
+            await db.commit()
+            logger.warning(
+                "Price history sync skipped — POLYGON_API_KEY not set. "
+                "Sign up free at polygon.io/dashboard/api-keys (5 req/min tier)."
+            )
+            return 0
+
         if tickers:
             wanted = [t.upper() for t in tickers]
         else:
-            # yfinance rate-limits aggressively. Scope to the top 400
-            # companies by market cap — that covers every tradable biotech
-            # anyone cares about; the long-tail penny stocks can wait.
+            # Scope to top 100 by market cap. Polygon free tier is 5 req/min
+            # so 500 would take 100 minutes. Top 100 takes ~20 minutes, covers
+            # every tradable biotech anyone charts.
             wanted = [
                 t
                 for (t,) in (
@@ -133,44 +187,31 @@ async def sync_price_history(
                         select(Company.ticker)
                         .where(Company.market_cap.is_not(None))
                         .order_by(Company.market_cap.desc().nullslast())
-                        .limit(400)
+                        .limit(100)
                     )
                 ).all()
             ]
 
-        period = _period_for_days(days)
         total = 0
         empty_count = 0
-        rate_limited_streak = 0
 
-        for ticker in wanted:
-            df = await asyncio.to_thread(_fetch_candles_sync, ticker, period)
-            if df is None or df.empty:
-                empty_count += 1
-                # If we get a streak of empty results, assume rate-limit and
-                # back off hard before continuing.
-                rate_limited_streak += 1
-                if rate_limited_streak >= 5:
-                    logger.warning(
-                        f"yfinance streak of {rate_limited_streak} empties "
-                        f"— backing off 30s"
-                    )
-                    await asyncio.sleep(30)
-                    rate_limited_streak = 0
-            else:
-                total += await _upsert_dataframe(db, ticker, df)
-                rate_limited_streak = 0
-            # 2.5s/ticker keeps us well under yfinance's undocumented
-            # throttle (~1 req/sec sustained is the observed ceiling).
-            await asyncio.sleep(2.5)
+        async with httpx.AsyncClient() as client:
+            for ticker in wanted:
+                rows = await _fetch_candles_polygon(client, ticker, days)
+                if not rows:
+                    empty_count += 1
+                else:
+                    total += await _upsert_candles(db, ticker, rows)
+                # 13s / ticker keeps us under Polygon free-tier 5 req/min.
+                await asyncio.sleep(13)
 
         log.completed_at = datetime.utcnow()
         log.status = "COMPLETED"
         log.records_processed = total
         await db.commit()
         logger.info(
-            f"Price history sync (yfinance): {total} candles across "
-            f"{len(wanted)} tickers ({empty_count} returned no data)"
+            f"Price history sync (polygon): {total} candles across "
+            f"{len(wanted)} tickers ({empty_count} had no data)"
         )
         return total
 
