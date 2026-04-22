@@ -112,9 +112,15 @@ export function PriceHistoryChart({ ticker }: { ticker: string }) {
           <Loader2 className="w-5 h-5 animate-spin text-accent" />
         </div>
       ) : candles.length === 0 ? (
-        <div className="flex items-center justify-center h-[300px] text-sm text-muted">
-          No price history yet. The daily Finnhub backfill will populate this
-          within 24 hours.
+        <div className="flex flex-col items-center justify-center h-[300px] text-center px-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-[10px] font-semibold uppercase tracking-widest mb-3">
+            Coming soon
+          </div>
+          <p className="text-sm text-foreground">Historical price charts on the way</p>
+          <p className="text-xs text-muted mt-1 max-w-sm">
+            Yahoo and Stooq rate-limit our backend&apos;s datacenter IP range.
+            We&apos;re wiring up a paid EOD feed (Polygon) — check back shortly.
+          </p>
         </div>
       ) : (
         <div className="w-full h-[300px]">
