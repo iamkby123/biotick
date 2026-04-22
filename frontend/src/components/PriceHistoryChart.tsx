@@ -113,13 +113,11 @@ export function PriceHistoryChart({ ticker }: { ticker: string }) {
         </div>
       ) : candles.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-[300px] text-center px-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-[10px] font-semibold uppercase tracking-widest mb-3">
-            Coming soon
-          </div>
-          <p className="text-sm text-foreground">Historical price charts on the way</p>
+          <p className="text-sm text-foreground">No price history for this ticker</p>
           <p className="text-xs text-muted mt-1 max-w-sm">
-            Yahoo and Stooq rate-limit our backend&apos;s datacenter IP range.
-            We&apos;re wiring up a paid EOD feed (Polygon) — check back shortly.
+            The overnight backfill covers the top 500 companies by market cap +
+            the 4 biotech ETFs. Long-tail tickers will populate on the next
+            daily cron run.
           </p>
         </div>
       ) : (

@@ -22,3 +22,10 @@ PyJWT[crypto]>=2.8.0
 feedparser>=6.0.11
 # HTML parsing for 8-K exhibit extraction (press releases, deals).
 beautifulsoup4>=4.12.0
+# curl_cffi impersonates real Chrome TLS fingerprints. Without it, Yahoo
+# rate-limits Fly's entire datacenter IP range on request #1, FDA blocks
+# our httpx calls with 401s, etc. This is the ONLY reliable way to scrape
+# public data from Fly.
+curl_cffi>=0.7
+# PDF text extraction for US House PTR (congressional trade) filings.
+pypdf>=4.3

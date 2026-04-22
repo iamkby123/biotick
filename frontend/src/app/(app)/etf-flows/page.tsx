@@ -67,6 +67,12 @@ function formatShares(v: number | null | undefined): string {
   return `${sign}${abs.toFixed(0)}`;
 }
 
+function formatPct(v: number | null | undefined): string {
+  if (v == null) return "—";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${(v * 100).toFixed(2)}%`;
+}
+
 export default function ETFFlowsPage() {
   const [selected, setSelected] = useState<string>("XBI");
   const [days, setDays] = useState(30);
@@ -98,10 +104,11 @@ export default function ETFFlowsPage() {
           <TrendingUp className="w-4 h-4" />
           Edge
         </div>
-        <h1 className="text-3xl font-bold tracking-tight mt-1">ETF Flows</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-1">Biotech ETFs</h1>
         <p className="text-sm text-muted mt-1">
-          Daily creations / redemptions across the major biotech ETFs. Positive
-          bars = new money in (shares created), negative = redemptions.
+          Daily NAV movement across the four major biotech ETFs. Positive bars
+          = up days, negative = down days. Cumulative window return is shown
+          per ticker on the left.
         </p>
       </div>
 
@@ -134,7 +141,7 @@ export default function ETFFlowsPage() {
                           : "text-muted"
                     )}
                   >
-                    {formatShares(item.net_share_change)} sh
+                    {formatPct(item.net_share_change)}
                   </span>
                 )}
               </div>
@@ -145,15 +152,14 @@ export default function ETFFlowsPage() {
                   <p
                     className={cn(
                       "text-[11px] font-mono mt-1",
-                      item.net_aum_change > 0
+                      item.net_share_change > 0
                         ? "text-positive"
-                        : item.net_aum_change < 0
+                        : item.net_share_change < 0
                           ? "text-negative"
                           : "text-muted"
                     )}
                   >
-                    {item.net_aum_change > 0 ? "+" : ""}
-                    {formatBig(item.net_aum_change)} over {days}d
+                    {formatPct(item.net_share_change)} over {days}d
                   </p>
                 </>
               ) : (
@@ -166,7 +172,7 @@ export default function ETFFlowsPage() {
 
       {/* Window chips */}
       <div className="flex items-center gap-2">
-        {[14, 30, 90].map((d) => (
+        {[30, 90, 180, 365].map((d) => (
           <button
             key={d}
             onClick={() => setDays(d)}
@@ -181,7 +187,7 @@ export default function ETFFlowsPage() {
           </button>
         ))}
         <span className="text-xs text-muted ml-auto">
-          Showing daily share changes for {selected}
+          Daily NAV change for {selected}
         </span>
       </div>
 
@@ -193,8 +199,8 @@ export default function ETFFlowsPage() {
           </div>
         ) : chartData.length === 0 ? (
           <div className="flex items-center justify-center h-[320px] text-sm text-muted text-center px-6">
-            No ETF flow data yet. The daily snapshot runs post-close;
-            deltas appear after the second consecutive day of data.
+            No NAV data yet for {selected}. The backfill sync populates
+            1 year on first run — try again in a few minutes.
           </div>
         ) : (
           <div className="h-[320px]">
@@ -217,7 +223,7 @@ export default function ETFFlowsPage() {
                   tickLine={false}
                   tickFormatter={(v) => {
                     const n = typeof v === "number" ? v : Number(v);
-                    return formatShares(n).replace(/^\+/, "");
+                    return `${(n * 100).toFixed(1)}%`;
                   }}
                 />
                 <Tooltip
@@ -229,7 +235,7 @@ export default function ETFFlowsPage() {
                   }}
                   formatter={(v, name) => {
                     const n = typeof v === "number" ? v : Number(v ?? 0);
-                    if (name === "delta_shares") return [formatShares(n), "Δ Shares"];
+                    if (name === "delta_shares") return [formatPct(n), "Δ NAV"];
                     return [n, String(name ?? "")];
                   }}
                 />

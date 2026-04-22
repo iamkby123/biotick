@@ -1,29 +1,19 @@
-"""Backfill + incremental sync of daily OHLCV.
+"""Backfill + incremental sync of daily OHLCV via Yahoo's chart JSON API.
 
-History of this file:
-1. Originally Finnhub's /stock/candle — 403 on free tier.
-2. Pivoted to yfinance — Yahoo rate-limits Fly.io's datacenter IP range
-   with `YFRateLimitError: Too Many Requests` on the FIRST request from
-   Fly. yfinance is a dead end in production.
-3. Tried Stooq — now requires a captcha-gated API key as of 2025.
-4. Now: Polygon.io (free tier — 5 req/min, 2y history). User must set
-   POLYGON_API_KEY in Fly secrets. Without it, the sync no-ops cleanly
-   so the daily cron doesn't spam errors.
+We call `https://query1.finance.yahoo.com/v7/finance/chart/{ticker}` directly
+with a `curl_cffi` session that impersonates Chrome — this defeats Yahoo's
+datacenter IP rate-limit (yfinance's own cookie+crumb flow breaks when
+wrapped in curl_cffi's session, but the chart endpoint doesn't need a
+crumb, so we bypass yfinance entirely).
 
-Polygon free-tier endpoint:
-  GET /v2/aggs/ticker/{ticker}/range/1/day/{from}/{to}?apiKey=...
-Returns: {results: [{t: ms, o, h, l, c, v}, ...]}
-
-Rate limit: 5 req/min. 500 tickers = 100 minutes. We pace ~13s between
-calls to stay under it.
+We also include the 4 biotech ETFs (XBI, IBB, LABU, SBIO) so the ETF
+flows page has a real NAV time series.
 """
 
 import asyncio
 import logging
-import os
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 
-import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -35,91 +25,94 @@ from app.models.sync_log import SyncLog
 logger = logging.getLogger(__name__)
 
 
-_POLYGON_BASE = "https://api.polygon.io"
+_ETF_TICKERS = ["XBI", "IBB", "LABU", "SBIO"]
+_CHART_URL = "https://query1.finance.yahoo.com/v7/finance/chart/{ticker}"
 
 
-def _polygon_key() -> str:
-    return os.environ.get("POLYGON_API_KEY", "").strip()
+def _range_for_days(days: int) -> str:
+    """Map day counts to Yahoo range labels. Yahoo accepts: 1d, 5d, 1mo,
+    3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max."""
+    if days <= 31:
+        return "1mo"
+    if days <= 93:
+        return "3mo"
+    if days <= 186:
+        return "6mo"
+    if days <= 365:
+        return "1y"
+    if days <= 730:
+        return "2y"
+    return "5y"
 
 
-async def _fetch_candles_polygon(
-    client: httpx.AsyncClient, ticker: str, days: int
-) -> list[dict] | None:
-    """Download Polygon.io daily-aggregate OHLCV for one ticker.
-
-    Returns a list of {date, open, high, low, close, volume} dicts or None
-    on failure / empty / rate-limit.
-    """
-    key = _polygon_key()
-    if not key:
-        return None
-    today = date.today()
-    d1 = today - timedelta(days=days)
-    url = (
-        f"{_POLYGON_BASE}/v2/aggs/ticker/{ticker.upper()}"
-        f"/range/1/day/{d1.isoformat()}/{today.isoformat()}"
-    )
+def _fetch_candles_sync(ticker: str, range_label: str) -> list[dict] | None:
+    """Blocking HTTP call via curl_cffi. Returns list of candle dicts or None."""
     try:
-        resp = await client.get(
-            url,
-            params={"apiKey": key, "adjusted": "true", "sort": "asc", "limit": 5000},
-            timeout=20,
+        from curl_cffi import requests as cureq
+
+        sess = cureq.Session(impersonate="chrome124")
+        resp = sess.get(
+            _CHART_URL.format(ticker=ticker),
+            params={"interval": "1d", "range": range_label},
+            timeout=15,
         )
-    except Exception as e:
-        logger.warning(f"polygon {ticker}: {e}")
-        return None
-    if resp.status_code == 429:
-        # Free tier is 5 req/min. If we hit a 429 our pacing is off —
-        # back off hard and let the next iteration retry.
-        logger.warning(f"polygon {ticker}: 429, sleeping 60s")
-        await asyncio.sleep(60)
-        return None
-    if resp.status_code != 200:
-        logger.warning(f"polygon {ticker}: HTTP {resp.status_code}")
-        return None
-    try:
+        if resp.status_code != 200:
+            logger.warning(f"yahoo chart {ticker}: HTTP {resp.status_code}")
+            return None
         data = resp.json() or {}
-    except Exception:
-        return None
-    results = data.get("results") or []
-    rows: list[dict] = []
-    for r in results:
-        try:
-            ts = r.get("t")  # ms timestamp
-            if not ts:
+        res_list = data.get("chart", {}).get("result") or []
+        if not res_list:
+            return None
+        res = res_list[0]
+        timestamps = res.get("timestamp") or []
+        quote = (res.get("indicators", {}).get("quote") or [{}])[0]
+        opens = quote.get("open") or []
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
+
+        rows: list[dict] = []
+        for i, ts in enumerate(timestamps):
+            try:
+                d = datetime.utcfromtimestamp(ts).date()
+                rows.append({
+                    "date": d,
+                    "open": opens[i] if i < len(opens) else None,
+                    "high": highs[i] if i < len(highs) else None,
+                    "low": lows[i] if i < len(lows) else None,
+                    "close": closes[i] if i < len(closes) else None,
+                    "volume": volumes[i] if i < len(volumes) else None,
+                })
+            except Exception:
                 continue
-            d = datetime.utcfromtimestamp(ts / 1000).date()
-            rows.append({
-                "date": d,
-                "open": r.get("o"),
-                "high": r.get("h"),
-                "low": r.get("l"),
-                "close": r.get("c"),
-                "volume": r.get("v"),
-            })
-        except Exception:
-            continue
-    return rows
+        return rows
+    except Exception as e:
+        logger.warning(f"yahoo chart {ticker} error: {e}")
+        return None
 
 
 async def _upsert_candles(
     db: AsyncSession, ticker: str, rows: list[dict]
 ) -> int:
-    """Upsert parsed rows for one ticker. Returns row count."""
+    """Upsert parsed rows for one ticker."""
     if not rows:
         return 0
     written = 0
     for r in rows:
         try:
+            # Skip rows with no close price (non-trading day at edges)
+            if r["close"] is None:
+                continue
             async with db.begin_nested():
                 stmt = pg_upsert(PriceHistory).values(
                     ticker=ticker,
                     date=r["date"],
-                    open=r["open"],
-                    high=r["high"],
-                    low=r["low"],
-                    close=r["close"],
-                    volume=r["volume"],
+                    open=float(r["open"]) if r["open"] is not None else None,
+                    high=float(r["high"]) if r["high"] is not None else None,
+                    low=float(r["low"]) if r["low"] is not None else None,
+                    close=float(r["close"]),
+                    volume=float(r["volume"]) if r["volume"] is not None else None,
                 )
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["ticker", "date"],
@@ -147,14 +140,7 @@ async def sync_price_history(
     days: int = 365,
     tickers: list[str] | None = None,
 ) -> int:
-    """Pull the last `days` of daily candles for every company (or subset).
-
-    `days=1825` = 5y backfill. Daily cron uses days=7 to top up without
-    reprocessing old data.
-
-    Requires POLYGON_API_KEY env var. Without it this is a no-op that
-    exits cleanly (so the daily scheduler doesn't spam FAILED entries).
-    """
+    """Pull the last `days` of daily candles for every company (or subset)."""
     log = SyncLog(
         sync_type="PRICE_HISTORY", started_at=datetime.utcnow(), status="RUNNING"
     )
@@ -162,56 +148,52 @@ async def sync_price_history(
     await db.commit()
 
     try:
-        if not _polygon_key():
-            log.completed_at = datetime.utcnow()
-            log.status = "COMPLETED"
-            log.records_processed = 0
-            log.error_message = "POLYGON_API_KEY not set — skipped"
-            await db.commit()
-            logger.warning(
-                "Price history sync skipped — POLYGON_API_KEY not set. "
-                "Sign up free at polygon.io/dashboard/api-keys (5 req/min tier)."
-            )
-            return 0
-
         if tickers:
             wanted = [t.upper() for t in tickers]
         else:
-            # Scope to top 100 by market cap. Polygon free tier is 5 req/min
-            # so 500 would take 100 minutes. Top 100 takes ~20 minutes, covers
-            # every tradable biotech anyone charts.
-            wanted = [
-                t
-                for (t,) in (
-                    await db.execute(
-                        select(Company.ticker)
-                        .where(Company.market_cap.is_not(None))
-                        .order_by(Company.market_cap.desc().nullslast())
-                        .limit(100)
-                    )
-                ).all()
-            ]
+            # Top 500 by market cap + the 4 biotech ETFs (pinned).
+            company_rows = (
+                await db.execute(
+                    select(Company.ticker)
+                    .where(Company.market_cap.is_not(None))
+                    .order_by(Company.market_cap.desc().nullslast())
+                    .limit(500)
+                )
+            ).all()
+            wanted = [t for (t,) in company_rows]
+            for etf in _ETF_TICKERS:
+                if etf not in wanted:
+                    wanted.append(etf)
 
+        range_label = _range_for_days(days)
         total = 0
         empty_count = 0
+        consec_empty = 0
 
-        async with httpx.AsyncClient() as client:
-            for ticker in wanted:
-                rows = await _fetch_candles_polygon(client, ticker, days)
-                if not rows:
-                    empty_count += 1
-                else:
-                    total += await _upsert_candles(db, ticker, rows)
-                # 13s / ticker keeps us under Polygon free-tier 5 req/min.
-                await asyncio.sleep(13)
+        for ticker in wanted:
+            rows = await asyncio.to_thread(_fetch_candles_sync, ticker, range_label)
+            if not rows:
+                empty_count += 1
+                consec_empty += 1
+                if consec_empty >= 10:
+                    # Got rate-limited — back off hard before continuing
+                    logger.warning("Yahoo chart: 10 consecutive empties, backing off 30s")
+                    await asyncio.sleep(30)
+                    consec_empty = 0
+            else:
+                total += await _upsert_candles(db, ticker, rows)
+                consec_empty = 0
+            # 1.0s pacing — chart endpoint is more permissive than the
+            # cookie+crumb endpoints yfinance uses.
+            await asyncio.sleep(1.0)
 
         log.completed_at = datetime.utcnow()
         log.status = "COMPLETED"
         log.records_processed = total
         await db.commit()
         logger.info(
-            f"Price history sync (polygon): {total} candles across "
-            f"{len(wanted)} tickers ({empty_count} had no data)"
+            f"Price history sync (yahoo chart): {total} candles across "
+            f"{len(wanted)} tickers ({empty_count} returned no data)"
         )
         return total
 

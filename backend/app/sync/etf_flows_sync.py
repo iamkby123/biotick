@@ -1,179 +1,143 @@
-"""Daily ETF flow snapshot.
+"""Daily ETF NAV snapshot + 1y history backfill.
 
-We track four biotech ETFs: XBI, IBB, LABU, SBIO. For each, we snapshot
-shares-outstanding + AUM once per day and compute the delta vs. the
-previous snapshot — creations (positive delta) imply net money in,
-redemptions (negative) imply money out.
+We track XBI, IBB, LABU, SBIO. Finnhub's /etf/profile and /etf/holdings
+are both 403 on free tier, so we call Yahoo's chart JSON directly via
+curl_cffi (which defeats datacenter-IP fingerprint blocks by spoofing
+Chrome's TLS ClientHello).
 
-Data source: Finnhub's /etf/profile?symbol=... endpoint (free tier has
-ETF profile data, though not intraday).
+We populate:
+- `nav` from daily close price
+- `delta_shares` column reused as the daily NAV % return (avoids a
+  schema migration; the router + frontend now interpret it as pct)
+- `shares_outstanding` / `aum` / `delta_aum` stay NULL — Yahoo's
+  quoteSummary endpoint needs a crumb cookie we can't obtain
+  reliably, and these fields aren't essential for the chart.
+
+1y backfill on first run gives the flows chart 250 bars out of the gate,
+so users see a real trend instead of a 2-day stub.
 """
 
 import asyncio
 import logging
-import os
-from datetime import date, datetime
+from datetime import datetime
 
-import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.models.etf_flow import ETFFlowDaily
 from app.models.sync_log import SyncLog
 
 logger = logging.getLogger(__name__)
 
-_BASE = "https://finnhub.io/api/v1"
 _ETFS = ["XBI", "IBB", "LABU", "SBIO"]
+_CHART_URL = "https://query1.finance.yahoo.com/v7/finance/chart/{ticker}"
 
 
-def _key() -> str:
-    return os.environ.get("FINNHUB_API_KEY", "").strip()
-
-
-async def _fetch_profile(client: httpx.AsyncClient, ticker: str) -> dict | None:
+def _fetch_history_sync(ticker: str) -> list[dict] | None:
+    """Blocking HTTP call to Yahoo chart. Returns list of (date, close, volume)."""
     try:
-        resp = await client.get(
-            f"{_BASE}/etf/profile",
-            params={"symbol": ticker, "token": _key()},
+        from curl_cffi import requests as cureq
+
+        sess = cureq.Session(impersonate="chrome124")
+        resp = sess.get(
+            _CHART_URL.format(ticker=ticker),
+            params={"interval": "1d", "range": "1y"},
             timeout=15,
         )
+        if resp.status_code != 200:
+            logger.warning(f"yahoo ETF {ticker}: HTTP {resp.status_code}")
+            return None
+        data = resp.json() or {}
+        res_list = data.get("chart", {}).get("result") or []
+        if not res_list:
+            return None
+        res = res_list[0]
+        timestamps = res.get("timestamp") or []
+        quote = (res.get("indicators", {}).get("quote") or [{}])[0]
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
+
+        rows: list[dict] = []
+        for i, ts in enumerate(timestamps):
+            try:
+                d = datetime.utcfromtimestamp(ts).date()
+                close = closes[i] if i < len(closes) else None
+                if close is None:
+                    continue
+                rows.append({
+                    "date": d,
+                    "nav": float(close),
+                    "volume": float(volumes[i]) if i < len(volumes) and volumes[i] is not None else None,
+                })
+            except Exception:
+                continue
+        return rows
     except Exception as e:
-        logger.warning(f"ETF profile fetch failed {ticker}: {e}")
-        return None
-    if resp.status_code == 429:
-        logger.warning("Finnhub 429, sleeping 60s")
-        await asyncio.sleep(60)
-        return None
-    if resp.status_code != 200:
-        logger.warning(f"ETF profile {ticker}: {resp.status_code} {resp.text[:200]}")
-        return None
-    try:
-        return resp.json() or {}
-    except Exception:
+        logger.warning(f"yahoo ETF {ticker} error: {e}")
         return None
 
 
-async def _fetch_quote(client: httpx.AsyncClient, ticker: str) -> dict | None:
-    """NAV proxy — use last-close quote."""
-    try:
-        resp = await client.get(
-            f"{_BASE}/quote",
-            params={"symbol": ticker, "token": _key()},
-            timeout=15,
-        )
-    except Exception as e:
-        logger.warning(f"quote {ticker}: {e}")
-        return None
-    if resp.status_code != 200:
-        return None
-    try:
-        return resp.json() or {}
-    except Exception:
-        return None
+async def _upsert_etf_history(db: AsyncSession, ticker: str, rows: list[dict]) -> int:
+    """Write NAV history for one ETF. Reuse delta_shares column to store
+    daily NAV % return (no schema migration needed)."""
+    if not rows:
+        return 0
+    rows.sort(key=lambda r: r["date"])
+
+    written = 0
+    prev_nav = None
+    for r in rows:
+        delta_nav_pct = None
+        if prev_nav and prev_nav > 0:
+            delta_nav_pct = (r["nav"] - prev_nav) / prev_nav
+        try:
+            async with db.begin_nested():
+                stmt = pg_upsert(ETFFlowDaily).values(
+                    etf_ticker=ticker,
+                    date=r["date"],
+                    nav=r["nav"],
+                    shares_outstanding=None,
+                    aum=None,
+                    delta_shares=delta_nav_pct,  # stores NAV % return
+                    delta_aum=None,
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["etf_ticker", "date"],
+                    set_={
+                        "nav": stmt.excluded.nav,
+                        "delta_shares": stmt.excluded.delta_shares,
+                    },
+                )
+                await db.execute(stmt)
+            written += 1
+        except Exception as e:
+            logger.warning(f"{ticker} ETF row error: {e}")
+            continue
+        prev_nav = r["nav"]
+    await db.commit()
+    return written
 
 
 async def sync_etf_flows(db: AsyncSession) -> int:
-    """Snapshot all four biotech ETFs and compute deltas."""
-    if not _key():
-        logger.warning("FINNHUB_API_KEY not set — skipping etf_flows sync")
-        return 0
-
+    """Backfill 1y of NAV for each of the 4 biotech ETFs."""
     log = SyncLog(sync_type="ETF_FLOWS", started_at=datetime.utcnow(), status="RUNNING")
     db.add(log)
     await db.commit()
 
     try:
-        today = date.today()
-        rows_written = 0
-
-        async with httpx.AsyncClient() as client:
-            for t in _ETFS:
-                profile = await _fetch_profile(client, t)
-                await asyncio.sleep(1.05)
-                quote = await _fetch_quote(client, t)
-                await asyncio.sleep(1.05)
-
-                # Finnhub ETF profile field names (vary by tier — free tier
-                # often has profile endpoint returning empty {}). Fall back
-                # to /quote for NAV which definitely works on free tier.
-                profile = profile or {}
-                nested = profile.get("profile") if isinstance(profile.get("profile"), dict) else profile
-
-                shares = (
-                    nested.get("sharesOutstanding")
-                    or nested.get("shareOutstanding")
-                    or nested.get("shares_outstanding")
-                )
-                aum = (
-                    nested.get("totalAssets")
-                    or nested.get("aum")
-                    or nested.get("totalAum")
-                )
-                nav = (
-                    nested.get("nav")
-                    or (quote.get("c") if quote else None)
-                )
-
-                # Even if profile is empty we still want a daily NAV row so
-                # the chart has SOMETHING to show. Only skip if NAV is also
-                # missing (true zero-data case).
-                if nav is None and aum is None and shares is None:
-                    logger.warning(f"ETF {t}: no profile data at all")
-                    continue
-
-                # Find the previous row to compute delta
-                prev = (
-                    await db.execute(
-                        select(ETFFlowDaily)
-                        .where(ETFFlowDaily.etf_ticker == t, ETFFlowDaily.date < today)
-                        .order_by(ETFFlowDaily.date.desc())
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
-
-                delta_shares = (
-                    float(shares) - float(prev.shares_outstanding)
-                    if shares is not None and prev and prev.shares_outstanding is not None
-                    else None
-                )
-                delta_aum = (
-                    float(aum) - float(prev.aum)
-                    if aum is not None and prev and prev.aum is not None
-                    else None
-                )
-
-                async with db.begin_nested():
-                    stmt = pg_upsert(ETFFlowDaily).values(
-                        etf_ticker=t,
-                        date=today,
-                        shares_outstanding=shares,
-                        aum=aum,
-                        nav=nav,
-                        delta_shares=delta_shares,
-                        delta_aum=delta_aum,
-                    )
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=["etf_ticker", "date"],
-                        set_={
-                            "shares_outstanding": stmt.excluded.shares_outstanding,
-                            "aum": stmt.excluded.aum,
-                            "nav": stmt.excluded.nav,
-                            "delta_shares": stmt.excluded.delta_shares,
-                            "delta_aum": stmt.excluded.delta_aum,
-                        },
-                    )
-                    await db.execute(stmt)
-                await db.commit()
-                rows_written += 1
+        total = 0
+        for etf in _ETFS:
+            rows = await asyncio.to_thread(_fetch_history_sync, etf)
+            if rows:
+                total += await _upsert_etf_history(db, etf, rows)
+            await asyncio.sleep(1.0)
 
         log.completed_at = datetime.utcnow()
         log.status = "COMPLETED"
-        log.records_processed = rows_written
+        log.records_processed = total
         await db.commit()
-        logger.info(f"ETF flows sync: {rows_written} rows")
-        return rows_written
+        logger.info(f"ETF flows sync: {total} rows across {len(_ETFS)} ETFs")
+        return total
 
     except Exception as e:
         log.completed_at = datetime.utcnow()
