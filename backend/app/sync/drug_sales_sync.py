@@ -56,47 +56,32 @@ Rules:
 
 
 def _extract_revenue_section(html: str) -> str:
-    """Return a ~25k-char slice of 10-K HTML likely to contain the revenue
-    table. 10-K bodies are typically 500k-2M chars so pasting the whole
-    thing to Claude is wasteful; this picks a relevant window.
+    """Return the cleaned text of the 10-K body, capped to fit Claude's
+    context window (~200k tokens ≈ 600k chars).
 
-    Anchors are broadened because large pharma 10-Ks (LLY, PFE, MRK) don't
-    necessarily use "Net Product Sales" — some use "Disaggregated revenue",
-    some just list product names under a "Revenue" heading. Fall back to
-    the back half of the doc if no anchor matches (where financial
-    statements live)."""
+    We previously tried to heuristically slice out the "Revenue by Product"
+    table, but 10-K structure varies too much — anchors for "Revenues by
+    product" also match geographic-revenue country tables, forward-looking
+    statements, risk factors, etc. The reliable play with a frontier model
+    like Sonnet 4.5 is to feed the whole document and trust the model to
+    find the table. Cost per filing is ~$0.04 cached, well under budget.
+    """
     if not html:
         return ""
     soup = BeautifulSoup(html, "html.parser")
-    for t in soup(["script", "style", "img"]):
+    for t in soup(["script", "style", "img", "svg"]):
         t.decompose()
     text_doc = soup.get_text(separator="\n", strip=True)
+    if not text_doc:
+        return ""
 
-    anchors = [
-        "Net Product Sales",
-        "Net product revenues",
-        "Product sales",
-        "Product revenue",
-        "Product revenues",
-        "Disaggregation of Revenue",
-        "Disaggregated revenue",
-        "Revenues by product",
-        "Revenue by Product",
-        "Worldwide Revenue",
-        "Key products",
-    ]
-    lowered = text_doc.lower()
-    best_idx = -1
-    for a in anchors:
-        idx = lowered.find(a.lower())
-        if idx >= 0 and (best_idx < 0 or idx < best_idx):
-            best_idx = idx
-    # Fall back to back half of doc — financial statements and revenue
-    # tables live in the second half, often near the F-pages.
-    if best_idx < 0:
-        best_idx = max(0, len(text_doc) // 2)
-    # Enlarge the window to 25k chars (~6k tokens, still cheap).
-    return text_doc[best_idx : best_idx + 25_000]
+    # Cap at 600k chars (~150k tokens) to leave headroom for prompt +
+    # completion. For the rare >600k filings we truncate the front end
+    # where boilerplate lives and keep the back where revenue notes live.
+    MAX_CHARS = 600_000
+    if len(text_doc) > MAX_CHARS:
+        text_doc = text_doc[-MAX_CHARS:]
+    return text_doc
 
 
 # Set to True once we see a "credit balance too low" 400. Aborts the
@@ -249,25 +234,34 @@ async def _fetch_10k_body(client: httpx.AsyncClient, edgar_url: str) -> str | No
     if idx.status_code != 200:
         return None
 
-    # EDGAR auto-index renders file rows like:
-    #   <a href="xyz-10k.htm">xyz-10k.htm</a>  2024-12-10 18:01:00  5,123,456
-    # Parse table rows to get (name, size).
+    # EDGAR auto-index rows are 3 cells:
+    #   [0] <a href="...">filename.htm</a>
+    #   [1] "175785"   (size in bytes)
+    #   [2] "2026-02-12 13:58:32"
+    # Parse accordingly.
     soup = BeautifulSoup(idx.text, "html.parser")
     candidates: list[tuple[str, int]] = []
     for row in soup.find_all("tr"):
         cells = row.find_all("td")
-        if len(cells) < 4:
+        if len(cells) < 3:
             continue
-        a = cells[2].find("a") if len(cells) > 2 else None
+        a = cells[0].find("a")
         if not a:
             continue
-        name = a.get("href") or a.get_text(strip=True)
+        name = a.get_text(strip=True) or a.get("href") or ""
         if not name.lower().endswith((".htm", ".html")):
             continue
-        if "index" in name.lower() or "financial_report" in name.lower():
+        lname = name.lower()
+        # Skip exhibits — we want the primary 10-K body, not an appendix.
+        if (
+            "index" in lname
+            or "financial_report" in lname
+            or "exhibit" in lname
+            or "_ex" in lname
+        ):
             continue
-        # Size column is usually last. Parse "12345" or "12,345".
-        size_txt = cells[-1].get_text(strip=True).replace(",", "")
+        # Size column (bytes).
+        size_txt = cells[1].get_text(strip=True).replace(",", "")
         try:
             size = int(size_txt)
         except ValueError:
