@@ -4,7 +4,18 @@
       "Bash(git init:*)",
       "Bash(mkdir -p backend/app/models backend/app/schemas backend/app/routers backend/app/services backend/app/sync backend/app/cache backend/data frontend)",
       "Bash(taskkill //F //IM python.exe)",
-      "Bash(venv/Scripts/uvicorn app.main:app --port 8000)"
+      "Bash(venv/Scripts/uvicorn app.main:app --port 8000)",
+      "Bash(ls -la /c/Users/kbysn/Desktop/biotech/backend/app/sync/*.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://biotick-api.fly.dev/api/health)",
+      "Bash(export PATH=\"$HOME/.fly/bin:$PATH\")",
+      "Bash(flyctl deploy *)",
+      "Bash(npx vercel *)",
+      "mcp__38d6afce-20d5-4636-bffa-faeed236b118__apply_migration",
+      "Bash(powershell -Command \"Invoke-WebRequest -Uri 'https://biotick-api.fly.dev/api/health' -Method GET -TimeoutSec 20 | Select-Object -ExpandProperty StatusCode\")",
+      "Bash(ping -n 1 biotick-api.fly.dev)",
+      "Bash(curl --max-time 30 -s -o /dev/null -w \"%{http_code}\" https://biotick-api.fly.dev/api/health)",
+      "Bash(python -c ' *)",
+      "Bash(npx tsc *)"
     ]
   }
 }

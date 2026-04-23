@@ -21,7 +21,6 @@ import {
   Newspaper,
   Megaphone,
   Handshake,
-  TrendingUp,
   Landmark,
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
@@ -39,7 +38,6 @@ const QUICK_LINKS = [
   { href: "/news", label: "Biotech News", icon: Newspaper, keywords: "rss stat fierce endpoints articles" },
   { href: "/press-releases", label: "Press Releases", icon: Megaphone, keywords: "8k announcements pr" },
   { href: "/deals", label: "Deals", icon: Handshake, keywords: "m&a acquisitions partnerships material agreements officer changes" },
-  { href: "/etf-flows", label: "ETF Flows", icon: TrendingUp, keywords: "xbi ibb creations redemptions" },
   { href: "/adcom", label: "FDA AdCom", icon: Users, keywords: "advisory committee meeting fda approval" },
   { href: "/congress-trades", label: "Congress Trades", icon: Landmark, keywords: "house senate ptr politician stock act" },
   { href: "/earnings", label: "Earnings Calendar", icon: DollarSign, keywords: "reports" },

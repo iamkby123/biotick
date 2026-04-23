@@ -45,7 +45,6 @@ CACHE_RULES: list[tuple[str, int]] = [
     ("/api/historical/prices",   300),  # candles, 5 min cache
     ("/api/press-releases",      300),
     ("/api/deals",               300),
-    ("/api/etf-flows",           300),
     ("/api/adcom",               600),
     ("/api/congress-trades",     300),
     ("/api/drug-sales",          600),

@@ -36,7 +36,6 @@ from app.routers import (
     stripe_webhook,
     news,
     short_interest,
-    etf_flows,
     press_releases,
     deals,
     adcom,
@@ -121,17 +120,6 @@ async def scheduled_patents_sync():
         logger.info(f"Scheduled patents sync: {count} patents")
     except Exception as e:
         logger.error(f"Scheduled patents sync failed: {e}")
-
-
-async def scheduled_etf_flows_sync():
-    """Daily ETF shares-outstanding + AUM snapshot."""
-    try:
-        from app.sync.etf_flows_sync import sync_etf_flows
-        async with async_session() as db:
-            count = await sync_etf_flows(db)
-        logger.info(f"Scheduled ETF flows sync: {count} rows")
-    except Exception as e:
-        logger.error(f"Scheduled ETF flows sync failed: {e}")
 
 
 async def scheduled_eight_k_pipeline():
@@ -246,12 +234,6 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.add_job(
-        scheduled_etf_flows_sync,
-        CronTrigger(hour=23, minute=45),  # post-close
-        id="etf_flows_sync",
-        replace_existing=True,
-    )
-    scheduler.add_job(
         scheduled_eight_k_pipeline,
         CronTrigger(hour=1, minute=0),  # after overnight filing_sync
         id="eight_k_pipeline",
@@ -351,7 +333,6 @@ app.include_router(predictions.router)
 app.include_router(stripe_webhook.router)
 app.include_router(news.router)
 app.include_router(short_interest.router)
-app.include_router(etf_flows.router)
 app.include_router(press_releases.router)
 app.include_router(deals.router)
 app.include_router(adcom.router)

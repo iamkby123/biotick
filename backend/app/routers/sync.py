@@ -25,7 +25,6 @@ from app.sync.news_sync import sync_news
 from app.sync.short_interest_sync import sync_short_interest
 from app.sync.patents_sync import sync_patents
 from app.sync.price_history_sync import sync_price_history
-from app.sync.etf_flows_sync import sync_etf_flows
 from app.sync.eight_k_pipeline import sync_eight_k_pipeline
 from app.sync.fda_adcom_sync import sync_fda_adcom
 from app.sync.congress_trades_sync import sync_congress_trades
@@ -378,12 +377,6 @@ async def trigger_price_history(days: int = 365):
         lambda: _wrap("PRICE_HISTORY", sync_price_history, days=days),
     )
     return {**result, "message": f"Finnhub price-history backfill ({days}d) started."}
-
-
-@router.post("/etf-flows")
-async def trigger_etf_flows():
-    result = _fire("ETF_FLOWS", lambda: _wrap("ETF_FLOWS", sync_etf_flows))
-    return {**result, "message": "ETF flow snapshot started."}
 
 
 @router.post("/eight-k")
