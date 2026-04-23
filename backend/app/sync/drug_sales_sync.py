@@ -56,15 +56,23 @@ Rules:
 
 
 def _extract_revenue_section(html: str) -> str:
-    """Return the cleaned text of the 10-K body, capped to fit Claude's
-    context window (~200k tokens ≈ 600k chars).
+    """Return a ~30k-char slice of 10-K text likely to contain the
+    per-product revenue table.
 
-    We previously tried to heuristically slice out the "Revenue by Product"
-    table, but 10-K structure varies too much — anchors for "Revenues by
-    product" also match geographic-revenue country tables, forward-looking
-    statements, risk factors, etc. The reliable play with a frontier model
-    like Sonnet 4.5 is to feed the whole document and trust the model to
-    find the table. Cost per filing is ~$0.04 cached, well under budget.
+    Anthropic's Tier-1 rate limit is 30k input tokens per minute, and
+    full 10-Ks clock in at ~100k-150k tokens. We can't feed the whole
+    doc per call — we'd burn the limit on one LLY filing. So we pick a
+    focused window using two heuristics:
+
+      1. Find the LAST occurrence of a strong revenue-table anchor —
+         the revenue note is always in the financial-statements section
+         which comes late in the doc. First occurrences of "Product
+         sales" / "Revenue" get matched by boilerplate / risk factors /
+         geographic disclosures.
+      2. Fall back to chars 60%-90% of the doc (financial statements
+         are always there) if no anchor matched.
+
+    30k chars ≈ 7,500 tokens — fits 4 calls/min under the limit.
     """
     if not html:
         return ""
@@ -75,13 +83,34 @@ def _extract_revenue_section(html: str) -> str:
     if not text_doc:
         return ""
 
-    # Cap at 600k chars (~150k tokens) to leave headroom for prompt +
-    # completion. For the rare >600k filings we truncate the front end
-    # where boilerplate lives and keep the back where revenue notes live.
-    MAX_CHARS = 600_000
-    if len(text_doc) > MAX_CHARS:
-        text_doc = text_doc[-MAX_CHARS:]
-    return text_doc
+    # Strong anchors for the actual product-revenue disclosure note
+    strong_anchors = [
+        "Disaggregation of Revenue",
+        "Disaggregated revenue",
+        "Revenues by product",
+        "Revenue by Product",
+        "Net Product Sales",
+        "Net product revenues",
+        "Major Products",
+        "Principal Products",
+    ]
+
+    lowered = text_doc.lower()
+
+    # Find the LAST occurrence — the revenue note lives in the back half.
+    best_idx = -1
+    for a in strong_anchors:
+        idx = lowered.rfind(a.lower())
+        if idx > best_idx:
+            best_idx = idx
+
+    if best_idx < 0:
+        # Fallback: chars 60%-90% of the doc — financial statements.
+        best_idx = int(len(text_doc) * 0.60)
+
+    # Back up 1k chars to catch the table header that precedes the anchor
+    start = max(0, best_idx - 1_000)
+    return text_doc[start : start + 30_000]
 
 
 # Set to True once we see a "credit balance too low" 400. Aborts the
@@ -370,6 +399,10 @@ async def sync_drug_sales(db: AsyncSession, limit: int = 10) -> int:
                             await db.execute(stmt)
                         written += 1
                     await db.commit()
+                    # Pace to stay under Anthropic Tier-1 rate limit
+                    # (30k input tokens/min). Each ~7.5k-token call at
+                    # 16s interval = 4 calls/min = 30k tokens/min exactly.
+                    await asyncio.sleep(16)
                 except Exception as e:
                     logger.warning(f"10-K {f.get('accession')}: {e}")
                     continue
