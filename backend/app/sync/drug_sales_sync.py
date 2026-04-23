@@ -128,7 +128,7 @@ async def _extract_with_claude(body_text: str) -> dict | None:
     client = AsyncAnthropic(api_key=key)
     try:
         msg = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5",
             max_tokens=1200,
             system=[
                 {
@@ -220,39 +220,80 @@ async def _candidate_companies(db: AsyncSession, limit: int) -> list[dict]:
 
 
 async def _fetch_10k_body(client: httpx.AsyncClient, edgar_url: str) -> str | None:
-    """Fetch index page, find the biggest .htm exhibit (likely the 10-K),
-    then fetch + return its text."""
+    """Fetch the LARGEST .htm exhibit from a 10-K filing — that's almost
+    always the 10-K body. Previously we picked the FIRST .htm which was
+    typically the cover page or a small exhibit, and the revenue tables
+    were never in our 25k-char window downstream.
+
+    Strategy:
+      1. Derive the filing directory from `edgar_url` (strip filename).
+      2. Fetch the EDGAR auto-index page listing all files + sizes.
+      3. Pick the .htm file with the biggest Content-Length (or the one
+         whose name contains '10-k' / '10k' / 'annual').
+    """
+    from urllib.parse import urljoin
+
+    # Derive directory from primary doc URL
+    directory = edgar_url if edgar_url.endswith("/") else edgar_url.rsplit("/", 1)[0] + "/"
+
     try:
         idx = await client.get(
-            edgar_url,
+            directory,
             headers={"User-Agent": SEC_USER_AGENT},
             timeout=20,
             follow_redirects=True,
         )
     except Exception as e:
-        logger.warning(f"10-K idx {edgar_url}: {e}")
+        logger.warning(f"10-K dir {directory}: {e}")
         return None
     if idx.status_code != 200:
         return None
 
+    # EDGAR auto-index renders file rows like:
+    #   <a href="xyz-10k.htm">xyz-10k.htm</a>  2024-12-10 18:01:00  5,123,456
+    # Parse table rows to get (name, size).
     soup = BeautifulSoup(idx.text, "html.parser")
-    best_href = None
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if href.lower().endswith((".htm", ".html")) and "index" not in href.lower():
-            best_href = href
-            break
-    if not best_href:
+    candidates: list[tuple[str, int]] = []
+    for row in soup.find_all("tr"):
+        cells = row.find_all("td")
+        if len(cells) < 4:
+            continue
+        a = cells[2].find("a") if len(cells) > 2 else None
+        if not a:
+            continue
+        name = a.get("href") or a.get_text(strip=True)
+        if not name.lower().endswith((".htm", ".html")):
+            continue
+        if "index" in name.lower() or "financial_report" in name.lower():
+            continue
+        # Size column is usually last. Parse "12345" or "12,345".
+        size_txt = cells[-1].get_text(strip=True).replace(",", "")
+        try:
+            size = int(size_txt)
+        except ValueError:
+            size = 0
+        candidates.append((name, size))
+
+    if not candidates:
+        # Fall back to old behavior
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href.lower().endswith((".htm", ".html")) and "index" not in href.lower():
+                candidates.append((href, 0))
+                break
+    if not candidates:
         return None
 
-    # Resolve relative links
-    from urllib.parse import urljoin
-    full = urljoin(edgar_url, best_href)
+    # Prefer files with "10-k" or "10k" in the name; fall back to biggest.
+    named = [(n, s) for n, s in candidates if "10-k" in n.lower() or "10k" in n.lower()]
+    picked = max(named or candidates, key=lambda c: c[1])
+    full = urljoin(directory, picked[0])
+
     try:
         doc = await client.get(
             full,
             headers={"User-Agent": SEC_USER_AGENT},
-            timeout=40,
+            timeout=60,
             follow_redirects=True,
         )
     except Exception as e:

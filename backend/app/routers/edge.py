@@ -129,88 +129,92 @@ async def get_catalyst_impact_stats(
 
 
 @router.get("/short-interest/{ticker}")
-async def get_short_interest(ticker: str):
+async def get_short_interest(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Get short interest data from Finnhub.
-    Shows short volume, days to cover, and short ratio.
+    Get short-interest + institutional-ownership + insider-sentiment for
+    a single ticker. Short interest comes from OUR `short_interest` table
+    (populated nightly from FINRA Reg SHO CSVs — free, reliable). Finnhub's
+    `/stock/short-interest` is paid-tier and returns 403 for us, so we
+    don't touch it. Institutional ownership + insider sentiment are also
+    paid-tier endpoints; we try them but quietly tolerate empty results.
     """
     import os
+    from sqlalchemy import select, desc
+    from app.models.short_interest import ShortInterest
+
+    ticker = ticker.upper()
     api_key = os.environ.get("FINNHUB_API_KEY", "")
-    if not api_key:
-        return {"error": "Finnhub API key not configured"}
 
     cache_key = f"short_interest:{ticker}"
     cached = cache.get(cache_key)
     if cached:
         return cached
 
-    loop = asyncio.get_event_loop()
+    # Short interest: use our local FINRA table (last 30 daily rows).
+    # The table stores daily short_volume + total_volume + short_pct
+    # (shares shorted / total traded that day). Traditional "days-to-
+    # cover" isn't available because we don't have average daily volume
+    # over a trailing window — we pass short_pct through as the metric.
+    short_interest: list[dict] = []
+    rows = (
+        await db.execute(
+            select(ShortInterest)
+            .where(ShortInterest.ticker == ticker)
+            .order_by(desc(ShortInterest.report_date))
+            .limit(30)
+        )
+    ).scalars().all()
+    for r in reversed(rows):
+        short_interest.append({
+            "date": r.report_date.isoformat() if r.report_date else None,
+            "short_interest": float(r.short_volume) if r.short_volume is not None else None,
+            "avg_volume": float(r.total_volume) if r.total_volume is not None else None,
+            "days_to_cover": float(r.short_pct) if r.short_pct is not None else None,
+        })
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        # Get short interest from Finnhub
-        try:
-            resp = await client.get(
-                "https://finnhub.io/api/v1/stock/short-interest",
-                params={"symbol": ticker.upper(), "token": api_key},
-            )
-            short_data = resp.json() if resp.status_code == 200 else []
-        except Exception:
-            short_data = []
+    # Institutional ownership + insider sentiment — paid tier, best effort.
+    ownership: list[dict] = []
+    sentiment: list[dict] = []
+    if api_key:
+        async with httpx.AsyncClient(timeout=10) as client:
+            try:
+                resp2 = await client.get(
+                    "https://finnhub.io/api/v1/institutional-ownership",
+                    params={"symbol": ticker, "token": api_key},
+                )
+                inst_data = resp2.json() if resp2.status_code == 200 else {}
+                if isinstance(inst_data, dict) and "ownership" in inst_data:
+                    for holder in inst_data["ownership"][:10]:
+                        ownership.append({
+                            "name": holder.get("name"),
+                            "shares": holder.get("share"),
+                            "change": holder.get("change"),
+                            "filing_date": holder.get("filingDate"),
+                        })
+            except Exception:
+                pass
 
-        # Get institutional ownership
-        try:
-            resp2 = await client.get(
-                "https://finnhub.io/api/v1/institutional-ownership",
-                params={"symbol": ticker.upper(), "token": api_key},
-            )
-            inst_data = resp2.json() if resp2.status_code == 200 else {}
-        except Exception:
-            inst_data = {}
-
-        # Get insider sentiment
-        try:
-            resp3 = await client.get(
-                "https://finnhub.io/api/v1/stock/insider-sentiment",
-                params={"symbol": ticker.upper(), "token": api_key, "from": "2025-01-01"},
-            )
-            sentiment_data = resp3.json() if resp3.status_code == 200 else {}
-        except Exception:
-            sentiment_data = {}
-
-    # Parse short interest
-    short_interest = []
-    if isinstance(short_data, list):
-        for entry in short_data[-6:]:  # Last 6 reports
-            short_interest.append({
-                "date": entry.get("settlementDate"),
-                "short_interest": entry.get("shortInterest"),
-                "avg_volume": entry.get("avgDailyVolume"),
-                "days_to_cover": entry.get("daysToCover"),
-            })
-
-    # Parse institutional ownership
-    ownership = []
-    if isinstance(inst_data, dict) and "ownership" in inst_data:
-        for holder in inst_data["ownership"][:10]:
-            ownership.append({
-                "name": holder.get("name"),
-                "shares": holder.get("share"),
-                "change": holder.get("change"),
-                "filing_date": holder.get("filingDate"),
-            })
-
-    # Parse insider sentiment
-    sentiment = []
-    if isinstance(sentiment_data, dict) and "data" in sentiment_data:
-        for s in sentiment_data["data"][-6:]:
-            sentiment.append({
-                "month": f"{s.get('year')}-{str(s.get('month',0)).zfill(2)}",
-                "change": s.get("change"),
-                "mspr": s.get("mspr"),  # Monthly share purchase ratio
-            })
+            try:
+                resp3 = await client.get(
+                    "https://finnhub.io/api/v1/stock/insider-sentiment",
+                    params={"symbol": ticker, "token": api_key, "from": "2025-01-01"},
+                )
+                sentiment_data = resp3.json() if resp3.status_code == 200 else {}
+                if isinstance(sentiment_data, dict) and "data" in sentiment_data:
+                    for s in sentiment_data["data"][-6:]:
+                        sentiment.append({
+                            "month": f"{s.get('year')}-{str(s.get('month',0)).zfill(2)}",
+                            "change": s.get("change"),
+                            "mspr": s.get("mspr"),
+                        })
+            except Exception:
+                pass
 
     result = {
-        "ticker": ticker.upper(),
+        "ticker": ticker,
         "short_interest": short_interest,
         "institutional_ownership": ownership,
         "insider_sentiment": sentiment,
@@ -226,73 +230,70 @@ async def get_top_shorted(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get top shorted biotech stocks.
-    Queries the top N biotechs by market cap, then fetches short interest from Finnhub.
-    Returns list sorted by short interest ratio (most shorted first).
+    Top shorted biotech tickers by days-to-cover, from our local
+    `short_interest` table (FINRA Reg SHO daily feed). For each ticker
+    we pick the most recent settlement-date row and rank by days_to_cover
+    descending. Joins `companies` for name / price / market_cap.
+
+    Previously this hit Finnhub's paid /stock/short-interest endpoint
+    and returned empty on free tier.
     """
-    import os
-    api_key = os.environ.get("FINNHUB_API_KEY", "")
-    if not api_key:
-        return {"stocks": [], "error": "Finnhub API key not configured"}
+    from sqlalchemy import select, desc
+    from app.models.short_interest import ShortInterest
 
     cache_key = f"top_shorted:{limit}"
     cached = cache.get(cache_key)
     if cached:
         return cached
 
-    # Get top biotech companies by market cap
-    result = await db.execute(
-        select(Company)
-        .where(
-            Company.sic_code.in_(BIOTECH_SIC_CODES),
-            Company.market_cap.isnot(None),
+    # Rank by average short_pct over the last 30 days per ticker so
+    # one-off spikes don't dominate. Filter out warrant/unit/right
+    # tickers (5-char symbols ending in W/U/R) — those trade thinly
+    # and skew to 100% short_pct for meaningless reasons.
+    sql = """
+        WITH recent AS (
+          SELECT si.ticker, AVG(si.short_pct) AS avg_short_pct,
+                 MAX(si.report_date) AS latest_date,
+                 AVG(si.short_volume) AS avg_short_vol,
+                 AVG(si.total_volume) AS avg_total_vol,
+                 SUM(si.total_volume) AS total_liquidity
+          FROM short_interest si
+          WHERE si.report_date >= (CURRENT_DATE - INTERVAL '30 days')
+          GROUP BY si.ticker
         )
-        .order_by(Company.market_cap.desc())
-        .limit(limit)
+        SELECT r.ticker, r.latest_date, r.avg_short_vol, r.avg_total_vol,
+               r.avg_short_pct, c.name, c.price, c.market_cap
+        FROM recent r
+        JOIN companies c ON c.ticker = r.ticker
+        WHERE r.avg_short_pct IS NOT NULL
+          AND c.sic_code = ANY(:sic_codes)
+          AND LENGTH(r.ticker) <= 4
+          AND r.total_liquidity > 100000
+        ORDER BY r.avg_short_pct DESC NULLS LAST
+        LIMIT :lim
+    """
+    from sqlalchemy import text as sa_text
+
+    result = await db.execute(
+        sa_text(sql),
+        {"sic_codes": list(BIOTECH_SIC_CODES), "lim": limit},
     )
-    companies = result.scalars().all()
-
-    # Fetch short interest for each ticker, in parallel batches
-    async def fetch_short(client: httpx.AsyncClient, company: Company) -> dict | None:
-        try:
-            resp = await client.get(
-                "https://finnhub.io/api/v1/stock/short-interest",
-                params={"symbol": company.ticker, "token": api_key},
-                timeout=8,
-            )
-            if resp.status_code != 200:
-                return None
-            data = resp.json()
-            if not isinstance(data, list) or not data:
-                return None
-            latest = data[-1]
-            return {
-                "ticker": company.ticker,
-                "name": company.name,
-                "price": company.price,
-                "market_cap": company.market_cap,
-                "short_interest": latest.get("shortInterest"),
-                "avg_volume": latest.get("avgDailyVolume"),
-                "days_to_cover": latest.get("daysToCover"),
-                "settlement_date": latest.get("settlementDate"),
-            }
-        except Exception:
-            return None
-
-    stocks = []
-    async with httpx.AsyncClient() as client:
-        # Run in batches of 10 to avoid hammering the API
-        batch_size = 10
-        for i in range(0, len(companies), batch_size):
-            batch = companies[i:i + batch_size]
-            results = await asyncio.gather(*[fetch_short(client, c) for c in batch])
-            stocks.extend([r for r in results if r is not None])
-
-    # Sort by days_to_cover descending (most shorted first)
-    stocks.sort(key=lambda s: s.get("days_to_cover") or 0, reverse=True)
+    stocks = [
+        {
+            "ticker": r[0],
+            "settlement_date": r[1].isoformat() if r[1] else None,
+            "short_interest": float(r[2]) if r[2] is not None else None,
+            "avg_volume": float(r[3]) if r[3] is not None else None,
+            "days_to_cover": float(r[4]) if r[4] is not None else None,  # actually short_pct
+            "name": r[5],
+            "price": float(r[6]) if r[6] is not None else None,
+            "market_cap": float(r[7]) if r[7] is not None else None,
+        }
+        for r in result.fetchall()
+    ]
 
     response = {"stocks": stocks, "total": len(stocks)}
-    cache.set(cache_key, response, 3600)  # Cache 1 hour
+    cache.set(cache_key, response, 3600)
     return response
 
 

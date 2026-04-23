@@ -90,7 +90,7 @@ async def _maybe_summarize(body: str, headline: str) -> str | None:
     excerpt = body[:6000]
     try:
         msg = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5",
             max_tokens=180,
             system=[
                 {
