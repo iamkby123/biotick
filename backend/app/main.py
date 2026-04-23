@@ -39,6 +39,7 @@ from app.routers import (
     press_releases,
     deals,
     adcom,
+    admin,
     congress_trades,
     drug_sales,
 )
@@ -336,6 +337,7 @@ app.include_router(short_interest.router)
 app.include_router(press_releases.router)
 app.include_router(deals.router)
 app.include_router(adcom.router)
+app.include_router(admin.router)
 app.include_router(congress_trades.router)
 app.include_router(drug_sales.router)
 

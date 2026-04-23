@@ -13,7 +13,7 @@ export function usePlan() {
       if (!user) return null;
       const { data } = await supabase
         .from("profiles")
-        .select("plan")
+        .select("plan, is_admin")
         .eq("id", user.id)
         .single();
       return data;
@@ -23,6 +23,7 @@ export function usePlan() {
 
   const plan: Plan = profile?.plan === "pro" ? "pro" : "free";
   const isPro = plan === "pro";
+  const isAdmin = Boolean(profile?.is_admin);
 
-  return { plan, isPro, isLoggedIn: !!user };
+  return { plan, isPro, isAdmin, isLoggedIn: !!user };
 }

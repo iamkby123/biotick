@@ -24,12 +24,14 @@ import {
   Megaphone,
   Handshake,
   Landmark,
+  Shield,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, useAuth } from "@/lib/providers";
 import { useCommandPalette } from "@/components/CommandPalette";
+import { usePlan } from "@/hooks/usePlan";
 
 const navSections = [
   {
@@ -78,6 +80,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
+  const { isAdmin } = usePlan();
   const openPalette = useCommandPalette((s) => s.setOpen);
   const [collapsed, setCollapsed] = useState(false);
   const [mac, setMac] = useState(false);
@@ -190,6 +193,43 @@ export default function Sidebar() {
             })}
           </div>
         ))}
+
+        {/* Admin-only section — only renders for profiles.is_admin=true */}
+        {isAdmin && (
+          <div>
+            {!collapsed && (
+              <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-muted/50 px-3 pt-3 pb-1">
+                Admin
+              </p>
+            )}
+            {collapsed && <div className="h-2" />}
+            {(() => {
+              const href = "/admin";
+              const isActive = pathname.startsWith(href);
+              return (
+                <Link
+                  href={href}
+                  title={collapsed ? "Admin" : undefined}
+                  className={cn(
+                    "flex items-center rounded-md text-[13px] font-medium transition-all duration-100 group",
+                    collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-3 py-[7px]",
+                    isActive
+                      ? "bg-accent/15 text-accent"
+                      : "text-muted hover:text-foreground hover:bg-surface-hover"
+                  )}
+                >
+                  <Shield
+                    className={cn(
+                      collapsed ? "w-4 h-4" : "w-3.5 h-3.5",
+                      isActive ? "text-accent" : "text-muted"
+                    )}
+                  />
+                  {!collapsed && "User Management"}
+                </Link>
+              );
+            })()}
+          </div>
+        )}
       </nav>
 
       {/* Bottom */}

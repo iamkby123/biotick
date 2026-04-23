@@ -67,18 +67,36 @@ async def _update_profile_by_id(user_id: str, plan: str, customer_id: str | None
 
 
 async def _update_profile_by_customer_id(customer_id: str, plan: str):
-    """Update a user's plan by Stripe customer ID (already linked to a profile)."""
+    """Update a user's plan by Stripe customer ID (already linked to a profile).
+
+    Guard rail: if we're DOWNGRADING (plan='free') and the profile was
+    granted pro by an admin (comp_granted=TRUE), we skip the update.
+    Stripe cancellation events shouldn't be able to unwind an admin comp.
+    """
     async with async_session() as db:
         try:
-            result = await db.execute(
-                text("""
-                    UPDATE profiles
-                    SET plan = :plan, updated_at = now()
-                    WHERE stripe_customer_id = :cid
-                    RETURNING id
-                """),
-                {"plan": plan, "cid": customer_id},
-            )
+            if plan == "free":
+                # Only touch rows that weren't admin-granted.
+                result = await db.execute(
+                    text("""
+                        UPDATE profiles
+                        SET plan = :plan, updated_at = now()
+                        WHERE stripe_customer_id = :cid
+                          AND comp_granted = FALSE
+                        RETURNING id
+                    """),
+                    {"plan": plan, "cid": customer_id},
+                )
+            else:
+                result = await db.execute(
+                    text("""
+                        UPDATE profiles
+                        SET plan = :plan, updated_at = now()
+                        WHERE stripe_customer_id = :cid
+                        RETURNING id
+                    """),
+                    {"plan": plan, "cid": customer_id},
+                )
             rows = result.fetchall()
             await db.commit()
             if rows:
