@@ -235,32 +235,47 @@ async def _candidate_companies(db: AsyncSession, limit: int) -> list[dict]:
 
 async def _fetch_10k_body(client: httpx.AsyncClient, edgar_url: str) -> str | None:
     """Fetch the LARGEST .htm exhibit from a 10-K filing — that's almost
-    always the 10-K body. Previously we picked the FIRST .htm which was
-    typically the cover page or a small exhibit, and the revenue tables
-    were never in our 25k-char window downstream.
+    always the 10-K body.
 
     Strategy:
       1. Derive the filing directory from `edgar_url` (strip filename).
       2. Fetch the EDGAR auto-index page listing all files + sizes.
       3. Pick the .htm file with the biggest Content-Length (or the one
          whose name contains '10-k' / '10k' / 'annual').
+
+    SEC EDGAR rate-limits aggressively (10 req/s per UA). When the
+    concurrent FILINGS sync is also hammering EDGAR, we get 429s.
+    Retry-on-429 with exponential backoff so we survive rate spikes
+    without dropping the entire batch.
     """
     from urllib.parse import urljoin
 
     # Derive directory from primary doc URL
     directory = edgar_url if edgar_url.endswith("/") else edgar_url.rsplit("/", 1)[0] + "/"
 
-    try:
-        idx = await client.get(
-            directory,
-            headers={"User-Agent": SEC_USER_AGENT},
-            timeout=20,
-            follow_redirects=True,
-        )
-    except Exception as e:
-        logger.warning(f"10-K dir {directory}: {e}")
+    async def _get_with_backoff(url: str, timeout: int = 20):
+        """GET with retry-on-429. Returns response or None."""
+        for attempt in range(4):
+            try:
+                resp = await client.get(
+                    url,
+                    headers={"User-Agent": SEC_USER_AGENT},
+                    timeout=timeout,
+                    follow_redirects=True,
+                )
+            except Exception as e:
+                logger.warning(f"EDGAR {url}: {e}")
+                return None
+            if resp.status_code == 429:
+                wait = 2 ** attempt  # 1, 2, 4, 8s
+                logger.info(f"EDGAR 429 on {url}, backing off {wait}s")
+                await asyncio.sleep(wait)
+                continue
+            return resp
         return None
-    if idx.status_code != 200:
+
+    idx = await _get_with_backoff(directory, timeout=20)
+    if idx is None or idx.status_code != 200:
         return None
 
     # EDGAR auto-index rows are 3 cells:
@@ -312,17 +327,8 @@ async def _fetch_10k_body(client: httpx.AsyncClient, edgar_url: str) -> str | No
     picked = max(named or candidates, key=lambda c: c[1])
     full = urljoin(directory, picked[0])
 
-    try:
-        doc = await client.get(
-            full,
-            headers={"User-Agent": SEC_USER_AGENT},
-            timeout=60,
-            follow_redirects=True,
-        )
-    except Exception as e:
-        logger.warning(f"10-K doc {full}: {e}")
-        return None
-    if doc.status_code != 200:
+    doc = await _get_with_backoff(full, timeout=60)
+    if doc is None or doc.status_code != 200:
         return None
     return doc.text
 
