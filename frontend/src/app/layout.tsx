@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Biotick - Biotech Research & Trading Platform",
   description:
-    "Real-time biotech pipeline tracking, clinical trial data, catalyst calendars, and AI-powered trade analysis.",
+    "Biotech pipeline tracking, clinical trial data, PDUFA + FDA AdCom calendars, SEC filings, and congressional trades — all in one dashboard.",
 };
 
 export default function RootLayout({
