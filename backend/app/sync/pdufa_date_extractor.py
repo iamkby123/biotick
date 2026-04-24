@@ -88,13 +88,19 @@ _DRUG_BLACKLIST = {
     "july", "august", "september", "october", "november", "december",
     # PDUFA / regulatory boilerplate
     "pdufa", "fda", "drug", "date", "target", "action", "company",
-    "prescription", "act", "user", "fee", "priority", "review", "priority",
+    "prescription", "act", "user", "fee", "priority", "review",
+    # Regulatory application types — these get captured by DRUG(ABBR)
+    # regex for patterns like "Application (BLA)" or "License (NDA)".
+    "application", "license", "new", "supplemental", "submission",
+    "nda", "bla", "snda", "sbla", "ind", "abla", "anda",
     # Filing labels
     "ex", "form", "annex", "exhibit", "document", "filing", "press", "release",
     # Generic leaders
     "the", "a", "an", "its", "our", "their", "this", "these",
     "announces", "announced", "announcement", "receives", "reports", "granted",
-    "on", "track", "under", "with", "for", "of", "from", "to",
+    "on", "track", "under", "with", "for", "of", "from", "to", "in",
+    # Qualitative
+    "positive", "negative", "mixed", "topline", "phase", "initial",
 }
 
 
@@ -179,13 +185,23 @@ def _extract_drug_name(body: str, headline: str | None = None) -> str | None:
         return s[:100]
 
     # (1) DRUG (ABBR): "Oxylanthanum carbonate (OLC)"
+    # Skip matches where the inner word is a regulatory application type
+    # ("Application (BLA)" / "License (NDA)" etc. — those are not drug names).
     for m in re.finditer(
         r"\b([A-Z][a-z]+(?:\s+[a-z]+){0,2})\s*\(([A-Z]{2,6})\)",
         window,
     ):
-        name = _clean(m.group(1))
-        if name and name.lower() not in _DRUG_BLACKLIST:
-            # Prefer brand form: "Drug (ABBR)"
+        candidate = m.group(1).strip()
+        first_word = candidate.split()[0].lower()
+        # All-words-blacklisted check: if every lowercase word in the
+        # candidate is boilerplate, skip.
+        words = candidate.lower().split()
+        if all(w in _DRUG_BLACKLIST for w in words):
+            continue
+        if first_word in _DRUG_BLACKLIST:
+            continue
+        name = _clean(candidate)
+        if name:
             return f"{name} ({m.group(2)})"
 
     # (2) DRUG as first word of sentence containing PDUFA/target-action.
@@ -220,6 +236,27 @@ def _extract_drug_name(body: str, headline: str | None = None) -> str | None:
             name = _clean(m.group(1))
             if name:
                 return name
+
+    # (5) Lowercase INN fallback. Drug names often follow these cues:
+    #   "study of <drug>"  |  "data from <drug>"
+    #   "treatment with <drug>"  |  "efficacy of <drug>"
+    #   "dose of <drug>"  |  "trial of <drug>"
+    #   "for <drug> in"
+    # The drug name is typically 8-20 lowercase letters (INNs) OR mixed-
+    # case code names (e.g., BIIB091). We enforce a min 6-char length so
+    # we don't capture english articles.
+    for pat in (
+        r"(?:study|data|trial|efficacy|treatment|dose|program)\s+(?:of|with|from|for)\s+([a-z]{6,25}(?:-[a-z0-9]+)?)",
+        r"\bfor\s+([a-z]{6,25}(?:-[a-z0-9]+)?)\s+in\s+[a-z]",
+    ):
+        for m in re.finditer(pat, window, re.IGNORECASE):
+            candidate = m.group(1).strip()
+            if candidate.lower() in _DRUG_BLACKLIST:
+                continue
+            # INN suffix heuristic — most drug names end in -mab, -nib,
+            # -ib, -ol, -ide, -sen, -rsen, -tinib, -mab, -ciclib, etc.
+            # We don't strictly require it but prefer those candidates.
+            return candidate
 
     return None
 
