@@ -83,11 +83,18 @@ _DRUG_MENTION_APP = re.compile(
 )
 
 _DRUG_BLACKLIST = {
+    # Months
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
+    # PDUFA / regulatory boilerplate
     "pdufa", "fda", "drug", "date", "target", "action", "company",
-    "the", "a", "an", "its", "our", "their", "ex", "form",
-    "annex", "exhibit", "document", "filing",
+    "prescription", "act", "user", "fee", "priority", "review", "priority",
+    # Filing labels
+    "ex", "form", "annex", "exhibit", "document", "filing", "press", "release",
+    # Generic leaders
+    "the", "a", "an", "its", "our", "their", "this", "these",
+    "announces", "announced", "announcement", "receives", "reports", "granted",
+    "on", "track", "under", "with", "for", "of", "from", "to",
 }
 
 
@@ -126,32 +133,78 @@ def _extract_exact_date(body: str) -> tuple[date | None, str]:
 def _extract_drug_name(body: str, headline: str | None = None) -> str | None:
     """Best-effort drug name extraction.
 
+    Biotech press releases show three common forms near a PDUFA mention:
+      A. Drug as subject of the sentence containing the PDUFA mention:
+         "Veligrotug on Track with a PDUFA Target Action Date of June 30, 2026"
+      B. Drug + parenthetical abbreviation before the PDUFA mention:
+         "Oxylanthanum carbonate (OLC) New Drug Application (NDA)
+          resubmission ... with a PDUFA target action date of June 29, 2026"
+      C. Drug in the prior sentence (with NDA/BLA/sBLA/sNDA keyword):
+         "zilganersen in Alexander disease ... PDUFA date set for Sep 22"
+
     Strategy — try in order:
-      1. "PDUFA date for <DRUG>" / "date of <DRUG>" pattern (drug comes
-         BEFORE the date, so we don't accidentally grab the month).
-      2. "application for <DRUG>" / "NDA for <DRUG>" / "BLA for <DRUG>".
-      3. First capitalized word in the headline that isn't blacklisted.
+      1. DRUG + (ABBR) capture in the 800-char window.
+      2. DRUG as first word of the sentence containing the PDUFA mention.
+      3. DRUG referenced in the same sentence via 'for X', 'of X'.
+      4. Fall back to the first capitalized token near NDA/BLA keywords.
     """
     if not body:
         return None
 
-    # Narrow body to the 400-char window around the first PDUFA mention
-    idx = body.lower().find("pdufa")
+    # Find the first PDUFA-ish mention. Use "pdufa" OR "target action" so we
+    # catch 'Veligrotug on Track with a PDUFA Target Action Date of...' even
+    # when the exact word "pdufa" comes later.
+    lower = body.lower()
+    idx = lower.find("pdufa")
     if idx < 0:
-        idx = body.lower().find("fda action")
+        idx = lower.find("target action date")
     if idx < 0:
-        idx = 0
-    window = body[max(0, idx - 400) : idx + 400]
+        idx = lower.find("fda action")
+    if idx < 0:
+        return None
+
+    # Window: 600 chars before + 300 after the mention.
+    window = body[max(0, idx - 600) : idx + 300]
 
     def _clean(s: str) -> str | None:
-        s = s.strip().strip(".,;:")
+        s = re.sub(r"\s+", " ", s).strip().strip(".,;:()")
         if not s:
             return None
-        first_word = s.split()[0].lower().strip(".,;:")
-        if first_word in _DRUG_BLACKLIST:
+        first = s.split()[0].lower().strip(".,;:")
+        if first in _DRUG_BLACKLIST:
+            return None
+        # Reject EX-99-style filing labels ("EX-99", "EX-99.1", "EX-21", etc.)
+        if re.match(r"^EX[-.\s]?\d", s, re.IGNORECASE):
             return None
         return s[:100]
 
+    # (1) DRUG (ABBR): "Oxylanthanum carbonate (OLC)"
+    for m in re.finditer(
+        r"\b([A-Z][a-z]+(?:\s+[a-z]+){0,2})\s*\(([A-Z]{2,6})\)",
+        window,
+    ):
+        name = _clean(m.group(1))
+        if name and name.lower() not in _DRUG_BLACKLIST:
+            # Prefer brand form: "Drug (ABBR)"
+            return f"{name} ({m.group(2)})"
+
+    # (2) DRUG as first word of sentence containing PDUFA/target-action.
+    # Split window into sentences, find the one with the mention, take the
+    # first capitalized non-blacklisted token.
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", window)
+    for s in sentences:
+        if re.search(r"pdufa|target\s+action|fda\s+action", s, re.IGNORECASE):
+            # Find first capitalized word in the sentence
+            m = re.search(
+                r"\b([A-Z][a-z]{2,}(?:[a-z0-9\-]+)?)\b", s
+            )
+            if m:
+                name = _clean(m.group(1))
+                if name:
+                    return name
+            break
+
+    # (3) "for <DRUG>" with drug NOT being a month (blacklist enforced).
     for pattern in (_DRUG_MENTION_BEFORE, _DRUG_MENTION_APP):
         m = pattern.search(window)
         if m:
@@ -159,9 +212,8 @@ def _extract_drug_name(body: str, headline: str | None = None) -> str | None:
             if name:
                 return name
 
-    # Headline fallback — biotech press releases usually lead with the drug
-    if headline:
-        # Strip common prefixes
+    # (4) Headline fallback
+    if headline and not headline.lower().startswith("ex-"):
         h = re.sub(r"^(Announces|Receives|Reports|Provides)\s+", "", headline, flags=re.IGNORECASE)
         m = re.match(r"^([A-Z][A-Za-z0-9\-]{2,30}(?:®|™|\*)?)", h)
         if m:
