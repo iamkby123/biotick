@@ -30,6 +30,7 @@ from app.sync.fda_adcom_sync import sync_fda_adcom
 from app.sync.congress_trades_sync import sync_congress_trades
 from app.sync.drug_sales_sync import sync_drug_sales
 from app.sync.drug_pipeline_sync import sync_drug_pipelines
+from app.sync.pdufa_date_extractor import sync_pdufa_dates_from_press_releases
 
 logger = logging.getLogger(__name__)
 
@@ -415,6 +416,17 @@ async def trigger_drug_sales(limit: int = 25):
         **result,
         "message": f"Drug-sales extraction started ({limit} 10-Ks, ~${limit * 0.03:.2f} budget).",
     }
+
+
+@router.post("/pdufa-extract")
+async def trigger_pdufa_extract():
+    """Scan press_releases.body_text for exact PDUFA target action dates
+    and write PDUFA catalysts with EXACT precision."""
+    result = _fire(
+        "PDUFA_EXTRACTOR",
+        lambda: _wrap("PDUFA_EXTRACTOR", sync_pdufa_dates_from_press_releases),
+    )
+    return {**result, "message": "PDUFA date extraction started (regex over press releases)."}
 
 
 @router.post("/drug-pipelines")

@@ -184,6 +184,18 @@ async def scheduled_drug_sales_sync():
         logger.error(f"Scheduled drug sales failed: {e}")
 
 
+async def scheduled_pdufa_extractor_sync():
+    """Daily regex pass over press_releases to pick up new exact PDUFA
+    target-action dates from 8-K announcements."""
+    try:
+        from app.sync.pdufa_date_extractor import sync_pdufa_dates_from_press_releases
+        async with async_session() as db:
+            count = await sync_pdufa_dates_from_press_releases(db)
+        logger.info(f"Scheduled PDUFA extractor: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled PDUFA extractor failed: {e}")
+
+
 async def scheduled_drug_pipelines_sync():
     """Weekly Claude-backed pipeline extraction from 10-K / 20-F.
 
@@ -297,6 +309,14 @@ async def lifespan(app: FastAPI):
         scheduled_drug_sales_sync,
         CronTrigger(day_of_week="sat", hour=6, minute=0),
         id="drug_sales_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_pdufa_extractor_sync,
+        # Runs after the 8-K pipeline at 01:00 so fresh press releases
+        # have already been parsed into body_text before we scan them.
+        CronTrigger(hour=2, minute=0),
+        id="pdufa_extractor_sync",
         replace_existing=True,
     )
     scheduler.add_job(
