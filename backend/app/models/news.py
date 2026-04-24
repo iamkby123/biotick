@@ -20,7 +20,11 @@ class NewsItem(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Array of ticker symbols mentioned in the title/body. Populated by a
     # regex + companies-table lookup during sync.
-    tickers: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # NOTE: use ARRAY(Text), not ARRAY(String). The existing column is
+    # Postgres text[] (from the migration). SQLAlchemy's ARRAY(String)
+    # emits casts like `$1::VARCHAR[]` which Postgres rejects when the
+    # column is text[] — causing a 500 on `?ticker=` queries.
+    tickers: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

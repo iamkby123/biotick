@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/press-releases", tags=["press-releases"])
 @router.get("")
 async def list_press_releases(
     ticker: str | None = Query(None),
-    days: int = Query(14, ge=1, le=120, description="Lookback window in days"),
+    days: int = Query(60, ge=1, le=365, description="Lookback window in days"),
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
