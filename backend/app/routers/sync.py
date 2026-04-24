@@ -151,12 +151,13 @@ async def trigger_drug_normalization(background_tasks: BackgroundTasks):
 
 
 @router.post("/fda-approvals")
-async def trigger_fda_sync(background_tasks: BackgroundTasks):
-    """Fetch FDA approval dates from OpenFDA. Runs in background."""
-    if "FDA_APPROVALS" in _running_syncs:
-        return {"status": "already_running"}
-    background_tasks.add_task(_run_sync_in_background, "FDA_APPROVALS", sync_fda_approvals)
-    return {"status": "started", "message": "FDA approval sync started."}
+async def trigger_fda_sync():
+    """Fetch FDA approval dates from OpenFDA + cross-ref to catalysts."""
+    result = _fire(
+        "FDA_APPROVALS",
+        lambda: _wrap("FDA_APPROVALS", sync_fda_approvals),
+    )
+    return {**result, "message": "FDA approval sync started."}
 
 
 @router.post("/sec-financials")
@@ -187,12 +188,10 @@ async def trigger_catalyst_extraction(background_tasks: BackgroundTasks):
 
 
 @router.post("/filings")
-async def trigger_filing_sync(background_tasks: BackgroundTasks):
-    """Sync SEC filings and insider trades. Runs in background."""
-    if "FILINGS" in _running_syncs:
-        return {"status": "already_running"}
-    background_tasks.add_task(_run_sync_in_background, "FILINGS", sync_filings)
-    return {"status": "started", "message": "Filing sync started in background."}
+async def trigger_filing_sync():
+    """Sync SEC filings (now including 20-F / 6-K FPI forms) and insider trades."""
+    result = _fire("FILINGS", lambda: _wrap("FILINGS", sync_filings))
+    return {**result, "message": "Filing sync started in background."}
 
 
 @router.post("/company-info")
