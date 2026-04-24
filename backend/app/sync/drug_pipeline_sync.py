@@ -192,26 +192,46 @@ def _make_drug_id(ticker: str, drug_name: str) -> str:
 
 
 async def _candidate_companies(db: AsyncSession, limit: int, min_market_cap: int) -> list[dict]:
-    """Tickers with <5 drugs + a recent annual report (10-K or 20-F) + market cap."""
+    """Tickers with <5 drugs + a recent 10-K / 20-F + market cap >= threshold.
+
+    Previously we ordered by ticker alphabetically, which biased the batch
+    toward A-letter tickers and skipped important ones (MRNA, BMRN, BBIO).
+    Now we:
+      1. Pick the latest 10-K / 20-F per company via DISTINCT ON.
+      2. Rank candidates by market cap DESC so highest-impact companies
+         get filled first.
+      3. Re-exclude companies whose drug_id already has a `claude_` row
+         (avoid burning tokens on ones we processed last run).
+    """
     rows = await db.execute(
         text(
             """
-            SELECT DISTINCT ON (c.ticker)
-                   c.ticker, c.market_cap, sf.edgar_url, sf.accession_number,
-                   sf.filed_date, sf.filing_type
+            WITH latest_ar AS (
+              SELECT DISTINCT ON (sf.ticker)
+                     sf.ticker, sf.edgar_url, sf.accession_number,
+                     sf.filed_date, sf.filing_type
+              FROM sec_filings sf
+              WHERE sf.filing_type IN ('10-K', '20-F')
+                AND sf.edgar_url IS NOT NULL
+                AND sf.filed_date > NOW() - INTERVAL '700 days'
+              ORDER BY sf.ticker, sf.filed_date DESC
+            ),
+            drug_counts AS (
+              SELECT company_ticker,
+                     COUNT(*) AS n,
+                     COUNT(*) FILTER (WHERE drug_id LIKE 'claude_%') AS n_claude
+              FROM drugs
+              GROUP BY company_ticker
+            )
+            SELECT c.ticker, c.market_cap, la.edgar_url, la.accession_number,
+                   la.filed_date, la.filing_type
             FROM companies c
-            JOIN sec_filings sf ON sf.ticker = c.ticker
-            LEFT JOIN (
-                SELECT company_ticker, COUNT(*) AS n
-                FROM drugs
-                GROUP BY company_ticker
-            ) d ON d.company_ticker = c.ticker
-            WHERE sf.filing_type IN ('10-K', '20-F')
-              AND sf.edgar_url IS NOT NULL
-              AND sf.filed_date > NOW() - INTERVAL '700 days'
-              AND c.market_cap >= :min_cap
-              AND COALESCE(d.n, 0) < 5
-            ORDER BY c.ticker, sf.filed_date DESC
+            JOIN latest_ar la ON la.ticker = c.ticker
+            LEFT JOIN drug_counts dc ON dc.company_ticker = c.ticker
+            WHERE c.market_cap >= :min_cap
+              AND COALESCE(dc.n, 0) < 5
+              AND COALESCE(dc.n_claude, 0) = 0
+            ORDER BY c.market_cap DESC NULLS LAST
             LIMIT :lim
             """
         ),
