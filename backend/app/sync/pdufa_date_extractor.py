@@ -99,9 +99,27 @@ _DRUG_BLACKLIST = {
     "the", "a", "an", "its", "our", "their", "this", "these",
     "announces", "announced", "announcement", "receives", "reports", "granted",
     "on", "track", "under", "with", "for", "of", "from", "to", "in",
-    # Qualitative
+    # Qualitative / study descriptors that LOOK like lowercase INNs
     "positive", "negative", "mixed", "topline", "phase", "initial",
+    "pivotal", "interim", "ongoing", "preliminary", "clinical", "final",
+    "recent", "updated", "successful", "additional", "further", "previous",
+    "primary", "secondary", "tertiary", "first", "second", "third",
+    "patient", "patients", "subject", "subjects", "participant", "participants",
+    "safety", "efficacy", "tolerability", "pharmacokinetic", "pharmacodynamic",
+    "endpoint", "endpoints", "cohort", "cohorts", "arm", "arms",
+    "randomized", "controlled", "blinded", "crossover", "single", "double",
+    "treatment", "placebo", "standard", "care", "disease", "condition",
 }
+
+
+# Common INN suffixes that confirm a lowercase word is probably a drug
+# name. Not a hard requirement but used to reject weak candidates.
+_INN_SUFFIXES = (
+    "mab", "nib", "ib", "ide", "ate", "one", "ol", "xat", "tan", "sartan",
+    "pril", "statin", "tinib", "ciclib", "ciclax", "ciclox", "ergoline",
+    "azepam", "idine", "orib", "parib", "gliptin", "sen", "rsen", "erin",
+    "vastatin", "stin", "zumab", "tuzumab", "ciclib", "stat", "vir",
+)
 
 
 def _extract_exact_date(body: str) -> tuple[date | None, str]:
@@ -238,25 +256,27 @@ def _extract_drug_name(body: str, headline: str | None = None) -> str | None:
                 return name
 
     # (5) Lowercase INN fallback. Drug names often follow these cues:
-    #   "study of <drug>"  |  "data from <drug>"
-    #   "treatment with <drug>"  |  "efficacy of <drug>"
-    #   "dose of <drug>"  |  "trial of <drug>"
-    #   "for <drug> in"
-    # The drug name is typically 8-20 lowercase letters (INNs) OR mixed-
-    # case code names (e.g., BIIB091). We enforce a min 6-char length so
-    # we don't capture english articles.
-    for pat in (
-        r"(?:study|data|trial|efficacy|treatment|dose|program)\s+(?:of|with|from|for)\s+([a-z]{6,25}(?:-[a-z0-9]+)?)",
-        r"\bfor\s+([a-z]{6,25}(?:-[a-z0-9]+)?)\s+in\s+[a-z]",
-    ):
+    #   "study of <drug>"  |  "dose of <drug>"  |  "trial of <drug>"
+    #   "treatment with <drug>"  |  "for <drug> in <disease>"
+    # We only accept the word IMMEDIATELY after the cue and require either
+    # a recognized INN suffix OR an adjacent drug-class keyword. This
+    # avoids capturing generic study descriptors like "pivotal" / "interim".
+    patterns = [
+        # Cue → drug; enforce "of" only (not "from/with") to reduce false
+        # positives like "data from <adjective> study".
+        r"(?:study|trial|efficacy|treatment|dose|program)\s+of\s+([a-z]{5,25}(?:-[a-z0-9]+)?)\b",
+        r"(?:treatment|dosed?)\s+with\s+([a-z]{5,25}(?:-[a-z0-9]+)?)\b",
+        r"\bfor\s+([a-z]{5,25}(?:-[a-z0-9]+)?)\s+in\s+(?:patients|[a-z]+\s+(?:disease|syndrome))",
+    ]
+    for pat in patterns:
         for m in re.finditer(pat, window, re.IGNORECASE):
-            candidate = m.group(1).strip()
-            if candidate.lower() in _DRUG_BLACKLIST:
+            candidate = m.group(1).strip().lower()
+            if candidate in _DRUG_BLACKLIST:
                 continue
-            # INN suffix heuristic — most drug names end in -mab, -nib,
-            # -ib, -ol, -ide, -sen, -rsen, -tinib, -mab, -ciclib, etc.
-            # We don't strictly require it but prefer those candidates.
-            return candidate
+            # Require either a known INN suffix or >= 8 letters (long
+            # biotech code names like "venglustat" / "zilganersen").
+            if candidate.endswith(_INN_SUFFIXES) or len(candidate) >= 8:
+                return candidate
 
     return None
 
