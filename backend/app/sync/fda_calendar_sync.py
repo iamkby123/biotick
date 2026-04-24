@@ -11,7 +11,7 @@ from datetime import datetime, date
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from rapidfuzz import fuzz, process
 
@@ -165,12 +165,58 @@ async def sync_fda_approvals(db: AsyncSession) -> int:
                     logger.warning(f"Error fetching FDA page: {e}")
                     break
 
+        # Cross-reference: if any non-FDA_APPROVAL catalyst (e.g. DATA_READOUT
+        # or PDUFA) has a past expected_date AND we now have a matching
+        # FDA_APPROVAL catalyst for the same ticker within ±60 days, mark
+        # the original catalyst as POSITIVE outcome. This closes the loop
+        # on catalysts that resolved without us noticing.
+        cross_ref_result = await db.execute(
+            text("""
+                UPDATE catalysts c
+                SET is_past = TRUE,
+                    outcome = 'POSITIVE',
+                    actual_date = fa.expected_date,
+                    updated_at = now()
+                FROM catalysts fa
+                WHERE fa.event_type = 'FDA_APPROVAL'
+                  AND c.event_type <> 'FDA_APPROVAL'
+                  AND c.company_ticker = fa.company_ticker
+                  AND c.is_past = FALSE
+                  AND c.expected_date < CURRENT_DATE
+                  AND ABS(fa.expected_date - c.expected_date) <= 60
+                RETURNING c.id
+            """)
+        )
+        cross_refs = len(cross_ref_result.fetchall())
+        if cross_refs:
+            logger.info(f"Cross-reference: marked {cross_refs} catalysts as POSITIVE outcome")
+
+        # Flip remaining old catalysts with expected_date in the past and
+        # no matching approval to is_past=TRUE (outcome stays null = unknown).
+        # Keeps the UI honest instead of showing "upcoming" events that
+        # already expired without us learning the outcome.
+        flip_result = await db.execute(
+            text("""
+                UPDATE catalysts
+                SET is_past = TRUE, updated_at = now()
+                WHERE is_past = FALSE
+                  AND expected_date < CURRENT_DATE - INTERVAL '14 days'
+                RETURNING id
+            """)
+        )
+        flipped = len(flip_result.fetchall())
+        if flipped:
+            logger.info(f"Flipped {flipped} expired catalysts to is_past=TRUE")
+
         log.completed_at = datetime.utcnow()
         log.status = "COMPLETED"
         log.records_processed = count
         await db.commit()
 
-        logger.info(f"FDA calendar sync complete: {count} approvals added")
+        logger.info(
+            f"FDA calendar sync complete: {count} approvals added, "
+            f"{cross_refs} cross-refs, {flipped} expired catalysts flipped"
+        )
         return count
 
     except Exception as e:

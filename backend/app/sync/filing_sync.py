@@ -79,8 +79,23 @@ async def sync_filings(db: AsyncSession) -> int:
                         if not accession:
                             continue
 
-                        # Filter to relevant filing types
-                        relevant_types = {"10-K", "10-Q", "8-K", "S-1", "S-3", "DEF 14A", "424B4", "424B5", "4", "SC 13D", "SC 13G"}
+                        # Filter to relevant filing types.
+                        #
+                        # Foreign private issuers (FPIs) like ARGX, BNTX,
+                        # GMAB, VLDX file different forms — 20-F instead
+                        # of 10-K (annual report), 6-K instead of 8-K
+                        # (current report). Without these we have zero
+                        # filings coverage for non-US-domiciled biotechs
+                        # even when they're NASDAQ-listed and biotech.
+                        relevant_types = {
+                            "10-K", "10-Q", "8-K",            # US domestic
+                            "20-F", "6-K", "40-F",            # Foreign private issuers
+                            "S-1", "S-3", "F-1", "F-3",       # Registration statements (FPI variants for F-*)
+                            "DEF 14A",
+                            "424B4", "424B5",
+                            "4",                               # Insider transactions
+                            "SC 13D", "SC 13G",
+                        }
                         if form_type not in relevant_types:
                             continue
 

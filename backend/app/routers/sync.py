@@ -29,6 +29,7 @@ from app.sync.eight_k_pipeline import sync_eight_k_pipeline
 from app.sync.fda_adcom_sync import sync_fda_adcom
 from app.sync.congress_trades_sync import sync_congress_trades
 from app.sync.drug_sales_sync import sync_drug_sales
+from app.sync.drug_pipeline_sync import sync_drug_pipelines
 
 logger = logging.getLogger(__name__)
 
@@ -414,4 +415,23 @@ async def trigger_drug_sales(limit: int = 25):
     return {
         **result,
         "message": f"Drug-sales extraction started ({limit} 10-Ks, ~${limit * 0.03:.2f} budget).",
+    }
+
+
+@router.post("/drug-pipelines")
+async def trigger_drug_pipelines(limit: int = 30, min_market_cap: int = 500_000_000):
+    """Claude-backed pipeline extraction from 10-K / 20-F for companies
+    with <5 drugs in our database. Costs ~$0.03 per filing."""
+    result = _fire(
+        "DRUG_PIPELINE",
+        lambda: _wrap(
+            "DRUG_PIPELINE",
+            sync_drug_pipelines,
+            limit=limit,
+            min_market_cap=min_market_cap,
+        ),
+    )
+    return {
+        **result,
+        "message": f"Drug pipeline enrichment started ({limit} filings, ~${limit * 0.03:.2f} budget).",
     }

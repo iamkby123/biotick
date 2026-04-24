@@ -145,6 +145,23 @@ async def scheduled_fda_adcom_sync():
         logger.error(f"Scheduled FDA AdCom failed: {e}")
 
 
+async def scheduled_fda_approvals_sync():
+    """Daily OpenFDA ingest + catalyst outcome cross-reference.
+
+    Pulls recent approvals from Drugs@FDA, writes FDA_APPROVAL catalysts,
+    then cross-references expired DATA_READOUT / PDUFA catalysts against
+    matching approvals and marks them as POSITIVE outcome. Also flips any
+    >14d-past catalysts from upcoming → past so the UI stays honest.
+    """
+    try:
+        from app.sync.fda_calendar_sync import sync_fda_approvals
+        async with async_session() as db:
+            count = await sync_fda_approvals(db)
+        logger.info(f"Scheduled FDA approvals: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled FDA approvals failed: {e}")
+
+
 async def scheduled_congress_trades_sync():
     """Daily US House PTR ingest."""
     try:
@@ -165,6 +182,22 @@ async def scheduled_drug_sales_sync():
         logger.info(f"Scheduled drug sales: {count} rows")
     except Exception as e:
         logger.error(f"Scheduled drug sales failed: {e}")
+
+
+async def scheduled_drug_pipelines_sync():
+    """Weekly Claude-backed pipeline extraction from 10-K / 20-F.
+
+    Fills gaps for companies with <5 drugs indexed (often FPIs and
+    vaccine/RNA platforms whose trials aren't tagged by sponsor name on
+    ClinicalTrials.gov). Complements the drug_sales run.
+    """
+    try:
+        from app.sync.drug_pipeline_sync import sync_drug_pipelines
+        async with async_session() as db:
+            count = await sync_drug_pipelines(db, limit=25)
+        logger.info(f"Scheduled drug pipelines: {count} rows")
+    except Exception as e:
+        logger.error(f"Scheduled drug pipelines failed: {e}")
 
 
 async def scheduled_trial_catalyst_sync():
@@ -247,6 +280,14 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.add_job(
+        scheduled_fda_approvals_sync,
+        # Daily at 3am UTC so we pick up overnight OpenFDA updates and
+        # the catalyst outcome cross-reference keeps the calendar clean.
+        CronTrigger(hour=3, minute=0),
+        id="fda_approvals_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
         scheduled_congress_trades_sync,
         CronTrigger(hour=8, minute=0),
         id="congress_trades_sync",
@@ -256,6 +297,14 @@ async def lifespan(app: FastAPI):
         scheduled_drug_sales_sync,
         CronTrigger(day_of_week="sat", hour=6, minute=0),
         id="drug_sales_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_drug_pipelines_sync,
+        # Run Sundays so the two Claude syncs don't stack up token usage
+        # in the same 24h window.
+        CronTrigger(day_of_week="sun", hour=6, minute=0),
+        id="drug_pipelines_sync",
         replace_existing=True,
     )
     scheduler.start()
