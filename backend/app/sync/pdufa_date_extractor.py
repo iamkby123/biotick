@@ -66,9 +66,29 @@ _MONTH_ONLY = re.compile(
 )
 
 # Drug name extraction — best-effort. Look for drug cues near the PDUFA mention.
-_DRUG_MENTION = re.compile(
-    r"(?:for|of)\s+([A-Z][A-Za-z0-9\-]{2,40}(?:®|™|\*)?)",
+# The pattern matches capitalized words that look like drug names, but we
+# explicitly reject common false positives (months, generic english words,
+# boilerplate filing labels).
+_DRUG_MENTION_BEFORE = re.compile(
+    # "... PDUFA target action date for <DRUG> of April 15, 2026"
+    # "... PDUFA date for <DRUG> is ..."
+    r"(?:date|pdufa)\s+(?:for|of)\s+"
+    r"([A-Z][A-Za-z0-9\-]{2,40}(?:®|™|\*|\s+\([A-Za-z]+[0-9\-]+\))?)",
+    re.IGNORECASE,
 )
+_DRUG_MENTION_APP = re.compile(
+    # "application for <DRUG>" / "NDA for <DRUG>" / "BLA for <DRUG>"
+    r"(?:application|submission|NDA|BLA|sBLA|sNDA)\s+for\s+"
+    r"([A-Z][A-Za-z0-9\-]{2,40}(?:®|™|\*)?)",
+)
+
+_DRUG_BLACKLIST = {
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+    "pdufa", "fda", "drug", "date", "target", "action", "company",
+    "the", "a", "an", "its", "our", "their", "ex", "form",
+    "annex", "exhibit", "document", "filing",
+}
 
 
 def _extract_exact_date(body: str) -> tuple[date | None, str]:
@@ -103,24 +123,52 @@ def _extract_exact_date(body: str) -> tuple[date | None, str]:
     return None, ""
 
 
-def _extract_drug_name(body: str) -> str | None:
-    """Best-effort drug name — matches capitalized word after 'for' or 'of'."""
+def _extract_drug_name(body: str, headline: str | None = None) -> str | None:
+    """Best-effort drug name extraction.
+
+    Strategy — try in order:
+      1. "PDUFA date for <DRUG>" / "date of <DRUG>" pattern (drug comes
+         BEFORE the date, so we don't accidentally grab the month).
+      2. "application for <DRUG>" / "NDA for <DRUG>" / "BLA for <DRUG>".
+      3. First capitalized word in the headline that isn't blacklisted.
+    """
     if not body:
         return None
-    # Narrow to the window around the first PDUFA mention
+
+    # Narrow body to the 400-char window around the first PDUFA mention
     idx = body.lower().find("pdufa")
     if idx < 0:
         idx = body.lower().find("fda action")
     if idx < 0:
-        return None
-    window = body[max(0, idx - 200) : idx + 200]
-    m = _DRUG_MENTION.search(window)
-    if m:
-        name = m.group(1).strip()
-        # Avoid obvious false positives
-        if name.lower() in {"fda", "pdufa", "drug"}:
+        idx = 0
+    window = body[max(0, idx - 400) : idx + 400]
+
+    def _clean(s: str) -> str | None:
+        s = s.strip().strip(".,;:")
+        if not s:
             return None
-        return name[:100]
+        first_word = s.split()[0].lower().strip(".,;:")
+        if first_word in _DRUG_BLACKLIST:
+            return None
+        return s[:100]
+
+    for pattern in (_DRUG_MENTION_BEFORE, _DRUG_MENTION_APP):
+        m = pattern.search(window)
+        if m:
+            name = _clean(m.group(1))
+            if name:
+                return name
+
+    # Headline fallback — biotech press releases usually lead with the drug
+    if headline:
+        # Strip common prefixes
+        h = re.sub(r"^(Announces|Receives|Reports|Provides)\s+", "", headline, flags=re.IGNORECASE)
+        m = re.match(r"^([A-Z][A-Za-z0-9\-]{2,30}(?:®|™|\*)?)", h)
+        if m:
+            name = _clean(m.group(1))
+            if name:
+                return name
+
     return None
 
 
@@ -170,7 +218,7 @@ async def sync_pdufa_dates_from_press_releases(db: AsyncSession) -> int:
                         continue
                     if (filed_date - d).days > 90:
                         continue
-                drug_name = _extract_drug_name(body) or "Unspecified"
+                drug_name = _extract_drug_name(body, headline=pr[3]) or "Unspecified"
                 ticker = pr[1]
                 if not ticker:
                     continue
