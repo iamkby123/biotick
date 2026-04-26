@@ -155,51 +155,24 @@ function Navbar() {
   );
 }
 
-/* ── Stock chart SVG paths (biotech-style volatile moves) ── */
-const CHART_PATHS = [
-  // Spike and crash pattern (like Blue Water Vaccines -94%)
-  "M0,180 L20,175 L40,170 L60,160 L80,140 L100,80 L120,40 L140,20 L150,15 L160,25 L180,120 L200,160 L220,175 L240,180 L260,182 L280,184 L320,185 L360,186 L400,186",
-  // Gradual decline with a bounce (like Inflarx)
-  "M0,40 L30,45 L60,55 L80,70 L90,30 L100,25 L110,35 L130,80 L160,120 L200,155 L240,170 L280,178 L320,182 L360,184 L400,185",
-  // Pump and dump pattern (like Eargo)
-  "M0,100 L20,95 L40,85 L60,60 L70,40 L80,30 L90,25 L100,35 L110,50 L120,90 L140,140 L160,165 L180,175 L200,180 L240,183 L280,185 L320,186 L360,186 L400,187",
-  // Rally pattern (bullish biotech)
-  "M0,185 L40,183 L80,180 L120,170 L140,155 L160,130 L180,100 L200,70 L220,50 L240,35 L260,25 L280,20 L300,22 L320,18 L340,15 L360,20 L380,18 L400,15",
-];
-
 /* ── Hero with biotech background ── */
 function Hero() {
   const { user } = useAuth();
   return (
     <section className="relative overflow-hidden min-h-[85vh] flex items-center">
-      {/* Animated background */}
+      {/* Animated background — clean version (no stock-chart squiggles) */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-gradient-to-b from-accent/8 via-accent/2 to-transparent" />
 
-        {/* Stock chart backgrounds — dramatic biotech moves */}
-        <svg className="absolute top-[10%] left-0 w-full h-[200px] opacity-[0.06]" viewBox="0 0 400 200" preserveAspectRatio="none">
-          <path d={CHART_PATHS[0]} fill="none" stroke="var(--color-negative)" strokeWidth="2" />
-          <path d={CHART_PATHS[0]} fill="url(#redFade)" />
-          <defs><linearGradient id="redFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--color-negative)" stopOpacity="0.15" /><stop offset="100%" stopColor="var(--color-negative)" stopOpacity="0" /></linearGradient></defs>
-        </svg>
-        <svg className="absolute top-[35%] left-0 w-full h-[200px] opacity-[0.05]" viewBox="0 0 400 200" preserveAspectRatio="none">
-          <path d={CHART_PATHS[3]} fill="none" stroke="var(--color-positive)" strokeWidth="2" />
-          <path d={CHART_PATHS[3]} fill="url(#greenFade)" />
-          <defs><linearGradient id="greenFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--color-positive)" stopOpacity="0.12" /><stop offset="100%" stopColor="var(--color-positive)" stopOpacity="0" /></linearGradient></defs>
-        </svg>
-        <svg className="absolute bottom-[5%] left-0 w-full h-[200px] opacity-[0.04]" viewBox="0 0 400 200" preserveAspectRatio="none">
-          <path d={CHART_PATHS[2]} fill="none" stroke="var(--color-negative)" strokeWidth="1.5" />
-        </svg>
-
-        {/* Grid overlay */}
+        {/* Subtle grid overlay */}
         <div className="absolute inset-0 opacity-[0.025]" style={{
           backgroundImage: "linear-gradient(var(--color-accent) 1px, transparent 1px), linear-gradient(90deg, var(--color-accent) 1px, transparent 1px)",
           backgroundSize: "60px 60px",
         }} />
 
-        {/* Glow orbs */}
+        {/* Soft accent glow orbs */}
         <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-accent/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-negative/3 rounded-full blur-[100px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-accent/3 rounded-full blur-[100px]" />
       </div>
 
       <div className="relative max-w-6xl mx-auto px-6 py-24 text-center">
@@ -651,59 +624,7 @@ function CongressTradesMock() {
   );
 }
 
-// ── Mock 5: Price Chart with Insider Overlay ─────────────────────────────
-function PriceChartMock() {
-  // Stylized SVG line chart with green/red dots for insider buys/sells
-  const w = 460, h = 200;
-  const path = "M0,140 L40,135 L80,150 L120,120 L160,100 L200,90 L240,70 L260,55 L280,40 L320,50 L360,35 L400,25 L440,30 L460,28";
-  const insiders = [
-    { x: 80,  y: 150, type: "sell" },
-    { x: 200, y: 90,  type: "buy"  },
-    { x: 280, y: 40,  type: "buy"  },
-    { x: 360, y: 35,  type: "sell" },
-  ];
-  return (
-    <div className="rounded-lg border border-border p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="font-mono font-bold text-sm">MRNA</span>
-          <span className="font-mono text-sm">$28.34</span>
-          <span className="text-[10px] font-mono text-positive bg-positive/10 px-1 py-0.5 rounded">+18.4%</span>
-        </div>
-        <div className="flex items-center gap-2 text-[9px] text-muted">
-          <span className="inline-flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-positive" /> Insider Buy
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-negative" /> Insider Sell
-          </span>
-        </div>
-      </div>
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[170px]">
-        <defs>
-          <linearGradient id="priceArea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
-          </linearGradient>
-          <pattern id="grid" width="46" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 46 0 L 0 0 0 40" fill="none" stroke="var(--color-border)" strokeWidth="0.5" opacity="0.4" />
-          </pattern>
-        </defs>
-        <rect width={w} height={h} fill="url(#grid)" />
-        <path d={`${path} L${w},${h} L0,${h} Z`} fill="url(#priceArea)" />
-        <path d={path} fill="none" stroke="var(--color-accent)" strokeWidth="2" />
-        {insiders.map((p, i) => (
-          <g key={i}>
-            <circle cx={p.x} cy={p.y} r="6" fill={p.type === "buy" ? "var(--color-positive)" : "var(--color-negative)"} opacity="0.2" />
-            <circle cx={p.x} cy={p.y} r="3.5" fill={p.type === "buy" ? "var(--color-positive)" : "var(--color-negative)"} stroke="var(--color-background)" strokeWidth="1.5" />
-          </g>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-// ── Mock 6: Most Shorted Biotechs ────────────────────────────────────────
+// ── Mock: Most Shorted Biotechs ──────────────────────────────────────────
 function ShortInterestMock() {
   const tickers = [
     { ticker: "KMTS", name: "Kestra Medical",        pct: 80.8 },
@@ -802,18 +723,6 @@ function FeatureShowcase() {
           ]}
           mock={<CongressTradesMock />}
           reverse
-        />
-
-        <ShowcaseRow
-          eyebrow="Price Charts + Insider Overlay"
-          title="Insider activity, plotted on the price chart"
-          description="Form 4 buys (green) and sells (red) plotted on a 1-year price chart for every ticker we track. See exactly when management was loading up — usually right before a catalyst they knew was coming."
-          bullets={[
-            "1 year of OHLCV history for 500+ biotech tickers + 4 ETFs",
-            "21,612 Form 4 insider transactions indexed",
-            "Sparklines + days-to-cover from FINRA Reg SHO",
-          ]}
-          mock={<PriceChartMock />}
         />
 
         <ShowcaseRow

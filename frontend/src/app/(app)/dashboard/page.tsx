@@ -58,6 +58,23 @@ export default function DashboardPage() {
     queryFn: () => fetchAPI("/drugs/count"),
   });
 
+  const { data: shortedData } = useQuery<{
+    stocks: Array<{
+      ticker: string;
+      name: string;
+      price: number | null;
+      market_cap: number | null;
+      // edge/top-shorted reuses the days_to_cover field to carry
+      // 30-day average short_pct (0..1).
+      days_to_cover: number | null;
+      settlement_date: string | null;
+    }>;
+    total: number;
+  }>({
+    queryKey: ["dashboard-top-shorted"],
+    queryFn: () => fetchAPI("/edge/top-shorted?limit=8"),
+  });
+
   const displayName = user?.user_metadata?.full_name
     || user?.email?.split("@")[0]
     || null;
@@ -284,6 +301,83 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Most-shorted biotechs (FINRA Reg SHO 30-day avg short_pct) */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
+            <TrendingDown className="w-4 h-4 text-negative" />
+            Most-Shorted Biotechs
+            <span className="text-[10px] font-normal text-muted/60 normal-case">
+              · 30-day avg short volume %
+            </span>
+          </h2>
+        </div>
+        {shortedData && shortedData.stocks.length > 0 ? (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface/50 border-b border-border">
+                  <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Ticker</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Company</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted w-[40%]">Short Volume %</th>
+                  <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Price</th>
+                  <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Market Cap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shortedData.stocks.slice(0, 8).map((s, i) => {
+                  const pct = (s.days_to_cover ?? 0) * 100;
+                  return (
+                    <tr
+                      key={s.ticker}
+                      className={cn(
+                        "hover:bg-surface-hover transition-colors",
+                        i < shortedData.stocks.length - 1 && "border-b border-border"
+                      )}
+                    >
+                      <td className="px-4 py-2.5">
+                        <Link
+                          href={`/companies/${s.ticker}`}
+                          className="font-semibold text-[13px] text-accent hover:underline"
+                        >
+                          {s.ticker}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2.5 text-[12px] text-muted truncate max-w-[200px]">
+                        {s.name}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-1.5 rounded-full bg-surface/80 overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-negative/60 to-negative rounded-full"
+                              style={{ width: `${Math.min(100, pct)}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[12px] font-semibold text-negative w-12 text-right">
+                            {pct.toFixed(1)}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[12px]">
+                        {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[12px] text-muted">
+                        {formatMarketCap(s.market_cap)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border border-dashed p-8 text-center">
+            <p className="text-xs text-muted">Loading short-interest leaderboard…</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
