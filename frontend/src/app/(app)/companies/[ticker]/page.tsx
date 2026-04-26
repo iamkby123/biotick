@@ -25,8 +25,6 @@ import type { Company, Drug, Trial } from "@/lib/types";
 import { formatMarketCap, formatPrice, formatPercent, cn, formatNumber } from "@/lib/utils";
 import { PHASE_COLORS, PHASE_LABELS, THERAPEUTIC_AREA_COLORS, STATUS_COLORS, STATUS_LABELS } from "@/lib/constants";
 import { FactorSummaryBadge, useBatchFactors } from "@/components/TrialFactors";
-import { PriceHistoryChart } from "@/components/PriceHistoryChart";
-import { ShortInterestCard } from "@/components/ShortInterestCard";
 
 interface Filing {
   id: number;
@@ -121,7 +119,7 @@ export default function CompanyDetailPage({
   params: Promise<{ ticker: string }>;
 }) {
   const { ticker } = use(params);
-  const [activeTab, setActiveTab] = useState<"overview" | "price" | "pipeline" | "trials" | "options" | "filings" | "news" | "patents">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "pipeline" | "trials" | "options" | "filings" | "news" | "patents">("overview");
 
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ["company", ticker],
@@ -252,7 +250,6 @@ export default function CompanyDetailPage({
 
   const tabs = [
     { id: "overview" as const, label: "Overview" },
-    { id: "price" as const, label: "Price" },
     { id: "pipeline" as const, label: "Pipeline", count: pipeline?.length },
     { id: "trials" as const, label: "Clinical Trials", count: trialsData?.total },
     { id: "options" as const, label: "Options Flow" },
@@ -352,13 +349,6 @@ export default function CompanyDetailPage({
           institutional={institutionalData}
           etfs={etfData}
         />
-      )}
-
-      {activeTab === "price" && (
-        <div className="space-y-4">
-          <PriceHistoryChart ticker={company.ticker} />
-          <ShortInterestCard ticker={company.ticker} />
-        </div>
       )}
 
       {activeTab === "pipeline" && (
