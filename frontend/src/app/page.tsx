@@ -9,16 +9,17 @@ import {
   Calendar,
   FlaskConical,
   FileText,
-  TrendingUp,
   TrendingDown,
   ArrowRight,
   Check,
   X,
   ChevronDown,
   ChevronUp,
-  BarChart3,
   Zap,
   Pill,
+  Megaphone,
+  Landmark,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/providers";
@@ -34,6 +35,7 @@ export default function LandingPage() {
       <TickerTape />
       <Stats />
       <Features />
+      <FeatureShowcase />
       <HowItWorks />
       <Pricing />
       <FAQ />
@@ -320,10 +322,10 @@ function Stats() {
     <section className="max-w-6xl mx-auto px-6 py-16">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {[
-          { value: "1,054", label: "Biotech Companies", icon: Search },
-          { value: "5,400+", label: "Clinical Trials", icon: FlaskConical },
-          { value: "2,800+", label: "Drug Programs", icon: Pill },
-          { value: "18,000+", label: "SEC Filings", icon: FileText },
+          { value: "1,054",   label: "Biotech Companies",  icon: Search },
+          { value: "16,917",  label: "Clinical Trials",    icon: FlaskConical },
+          { value: "5,549",   label: "Drug Programs",      icon: Pill },
+          { value: "30,000+", label: "SEC Filings",        icon: FileText },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border bg-surface/50 p-5 text-center hover:border-accent/30 transition-colors">
             <s.icon className="w-5 h-5 text-accent mx-auto mb-3" />
@@ -339,12 +341,12 @@ function Stats() {
 /* ── Features ── */
 function Features() {
   const features = [
-    { icon: Search, title: "Company Screener", description: "Filter and sort 1,000+ US-listed biotech companies by market cap, exchange, therapeutic area, and pipeline stage." },
-    { icon: FlaskConical, title: "Drug Pipeline Tracker", description: "Track every drug from Phase 1 through approval. See indications, mechanisms, and trial timelines at a glance." },
-    { icon: Calendar, title: "Catalyst Calendar", description: "Never miss an FDA decision or data readout. Catalysts scored by significance with confidence levels." },
-    { icon: BarChart3, title: "Options Flow", description: "Visualize call vs put volume by expiration. Put/call ratio and sentiment analysis for every biotech stock." },
-    { icon: FileText, title: "SEC Filings", description: "Monitor 10-K, 10-Q, 8-K filings and Form 4 insider trades. Spot insider buying before the market does." },
-    { icon: TrendingUp, title: "Insider Activity", description: "Track insider buying and selling with net activity signals. See who's putting their money where their mouth is." },
+    { icon: Search,       title: "Company Screener",     description: "Filter 1,000+ US-listed biotech companies by market cap, therapeutic area, pipeline stage, or upcoming catalyst." },
+    { icon: FlaskConical, title: "Drug Pipelines",       description: "Every program Phase 1 through Marketed for 5,500+ drugs. Annual revenue auto-extracted from 10-K filings via Claude." },
+    { icon: Calendar,     title: "PDUFA Calendar",       description: "Every FDA decision date, advisory committee, and trial readout in one calendar. Exact-day events pinned, outcomes auto-cross-referenced." },
+    { icon: Megaphone,    title: "Press Releases (AI)",  description: "Every biotech 8-K press release with a 2-sentence Claude summary explaining the news angle and the investor takeaway." },
+    { icon: Landmark,     title: "Congress Trades",      description: "Biotech trades by US House members, sourced directly from PTR filings on disclosures-clerk.house.gov." },
+    { icon: TrendingDown, title: "Short Interest",       description: "53,000+ FINRA Reg SHO rows. Days-to-cover, most-shorted leaderboard, sparklines on every company page." },
   ];
 
   return (
@@ -371,6 +373,476 @@ function Features() {
     </section>
   );
 }
+
+/* ── Feature Showcase (alternating screenshot mocks) ──
+   Each "screenshot" is a real React component styled as a UI mock —
+   that way it always matches the live product, doesn't need a CDN, and
+   never blocks page render waiting for image loads.
+*/
+
+function MockFrame({ children }: { children: React.ReactNode }) {
+  // Browser-chrome wrapper. Subtle gradient ring + shadow to read as a
+  // screenshot rather than an inline component.
+  return (
+    <div className="relative">
+      <div className="absolute -inset-4 bg-gradient-to-br from-accent/15 via-accent/5 to-transparent blur-3xl opacity-60" />
+      <div className="relative rounded-xl border border-border bg-background shadow-2xl shadow-accent/5 overflow-hidden">
+        {/* Window chrome */}
+        <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-border bg-surface/50">
+          <span className="w-2.5 h-2.5 rounded-full bg-negative/40" />
+          <span className="w-2.5 h-2.5 rounded-full bg-warning/40" />
+          <span className="w-2.5 h-2.5 rounded-full bg-positive/40" />
+          <span className="ml-3 text-[10px] font-mono text-muted/70">biotick.io</span>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ShowcaseRow({
+  eyebrow,
+  title,
+  description,
+  bullets,
+  mock,
+  reverse = false,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  bullets: string[];
+  mock: React.ReactNode;
+  reverse?: boolean;
+}) {
+  return (
+    <div className={cn(
+      "grid grid-cols-1 lg:grid-cols-2 gap-12 items-center",
+      reverse ? "lg:[&>*:first-child]:order-2" : ""
+    )}>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+          {eyebrow}
+        </p>
+        <h3 className="text-3xl md:text-4xl font-bold tracking-tight mt-3">
+          {title}
+        </h3>
+        <p className="text-muted mt-4 text-[15px] leading-relaxed">
+          {description}
+        </p>
+        <ul className="mt-6 space-y-2.5">
+          {bullets.map((b) => (
+            <li key={b} className="flex items-start gap-2.5 text-sm">
+              <Check className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+              <span>{b}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <MockFrame>{mock}</MockFrame>
+    </div>
+  );
+}
+
+// ── Mock 1: Catalyst Calendar ────────────────────────────────────────────
+function CalendarMock() {
+  // Pretend May 2026: 7-col day grid, three pinned EXACT events + a
+  // "Somewhere this month" strip mirroring the real PDUFA page.
+  const days = Array.from({ length: 35 }, (_, i) => i - 4);
+  const exact: Record<number, { ticker: string; type: "PDUFA" | "AdCom" | "Data"; color: string }> = {
+    8: { ticker: "VRDN", type: "PDUFA", color: "bg-accent" },
+    15: { ticker: "MRNA", type: "Data", color: "bg-accent/60" },
+    22: { ticker: "IONS", type: "AdCom", color: "bg-warning" },
+  };
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="px-3 py-2 border-b border-border bg-surface/40 flex items-center justify-between">
+        <span className="text-xs font-semibold">May 2026</span>
+        <span className="text-[10px] font-mono text-muted">12 events</span>
+      </div>
+
+      {/* "Somewhere this month" strip */}
+      <div className="px-3 py-2 border-b border-border/50 bg-accent/5">
+        <p className="text-[8px] uppercase tracking-widest text-muted/70 mb-1.5">
+          Somewhere this month
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {[
+            { t: "BIIB", d: "BIIB-122" },
+            { t: "SRPT", d: "ELEVIDYS" },
+            { t: "ALNY", d: "Vutrisiran" },
+            { t: "AXSM", d: "AXS-05" },
+          ].map((c) => (
+            <span key={c.t} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-accent/10 text-accent">
+              <span className="w-0.5 h-0.5 rounded-full bg-accent" />
+              <span className="font-mono font-semibold">{c.t}</span>
+              <span className="text-muted">{c.d}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Day-of-week header */}
+      <div className="grid grid-cols-7 text-[8px] uppercase tracking-widest text-muted/70 border-b border-border/50">
+        {["S","M","T","W","T","F","S"].map((d, i) => (
+          <div key={i} className="px-1 py-1 text-center">{d}</div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 auto-rows-[44px]">
+        {days.map((d, i) => {
+          const valid = d >= 1 && d <= 31;
+          const ev = valid ? exact[d] : undefined;
+          return (
+            <div
+              key={i}
+              className={cn(
+                "border-b border-r border-border/40 p-1 text-[9px] overflow-hidden",
+                !valid && "bg-surface/20"
+              )}
+            >
+              {valid && (
+                <>
+                  <div className="font-mono text-muted">{d}</div>
+                  {ev && (
+                    <span className={cn(
+                      "mt-0.5 inline-flex items-center gap-1 px-1 py-0 rounded text-[8px] bg-accent/10 text-accent"
+                    )}>
+                      <span className={cn("w-0.5 h-0.5 rounded-full", ev.color)} />
+                      <span className="font-mono font-semibold">{ev.ticker}</span>
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Mock 2: Drug Pipeline ────────────────────────────────────────────────
+function PipelineMock() {
+  const drugs = [
+    { name: "Mounjaro",    indication: "Diabetes / Obesity",     phase: "MARKETED",  rev: "$23.0B" },
+    { name: "Zepbound",    indication: "Obesity",                phase: "MARKETED",  rev: "$13.7B" },
+    { name: "mRNA-3705",   indication: "Methylmalonic acidemia", phase: "PHASE 3",   rev: null },
+    { name: "Veligrotug",  indication: "Thyroid eye disease",    phase: "FILED",     rev: null },
+    { name: "Spikevax",    indication: "COVID-19",               phase: "MARKETED",  rev: "$1.6B" },
+    { name: "BIIB-122",    indication: "Parkinson's",            phase: "PHASE 3",   rev: null },
+  ];
+  const phaseColor: Record<string, string> = {
+    MARKETED:  "bg-positive/15 text-positive",
+    "FILED":   "bg-accent/15 text-accent",
+    "PHASE 3": "bg-accent/10 text-accent/90",
+    "PHASE 2": "bg-muted/15 text-muted",
+    "PHASE 1": "bg-muted/10 text-muted/80",
+  };
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="px-3 py-2 border-b border-border bg-surface/40 flex items-center justify-between">
+        <span className="text-xs font-semibold">Drug Pipeline</span>
+        <span className="text-[10px] font-mono text-muted">5,549 drugs</span>
+      </div>
+      <table className="w-full text-[12px]">
+        <tbody>
+          {drugs.map((d, i) => (
+            <tr key={i} className="border-b border-border/50 last:border-b-0">
+              <td className="px-3 py-2 font-semibold">{d.name}</td>
+              <td className="px-3 py-2 text-muted">{d.indication}</td>
+              <td className="px-3 py-2">
+                <span className={cn(
+                  "text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider",
+                  phaseColor[d.phase] || "bg-muted/10 text-muted"
+                )}>
+                  {d.phase}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-positive">
+                {d.rev ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Mock 3: Press Releases with AI Summaries ─────────────────────────────
+function PressReleasesMock() {
+  const items = [
+    {
+      ticker: "KYTX",
+      headline: "Kyverna presents positive Phase 2/3 data for miv-cel CAR-T",
+      summary: "Stiff person syndrome cohort showed 100% immunotherapy-free response and statistically significant disability reversal. CAR-T extends Kyverna's autoimmune franchise — first major data validation for non-oncology CAR-T.",
+      time: "2h ago",
+    },
+    {
+      ticker: "VRDN",
+      headline: "Veligrotug receives PDUFA target action date of June 30, 2026",
+      summary: "FDA accepted BLA for thyroid eye disease; priority review granted. Approval would compete directly with Tepezza ($5.2B AMGN drug) and likely command pricing parity.",
+      time: "5h ago",
+    },
+  ];
+  return (
+    <div className="space-y-2">
+      {items.map((it, i) => (
+        <div key={i} className="rounded-lg border border-border p-3 hover:border-accent/30">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="font-mono text-[11px] font-bold text-accent">{it.ticker}</span>
+            <span className="text-[10px] text-muted">·</span>
+            <span className="text-[10px] text-muted">{it.time}</span>
+            <span className="ml-auto inline-flex items-center gap-1 text-[9px] text-accent bg-accent/10 px-1.5 py-0.5 rounded font-semibold uppercase tracking-widest">
+              <Sparkles className="w-2.5 h-2.5" /> AI Summary
+            </span>
+          </div>
+          <p className="text-[12px] font-semibold leading-snug">{it.headline}</p>
+          <p className="text-[11px] text-muted mt-1.5 leading-relaxed">{it.summary}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Mock 4: Congressional Trades ─────────────────────────────────────────
+function CongressTradesMock() {
+  const trades = [
+    { date: "Mar 19", member: "Cisneros (D-CA)", ticker: "BBIO", type: "BUY",  amount: "$1K-$15K" },
+    { date: "Mar 20", member: "Hern (R-OK)",     ticker: "MDT",  type: "SELL", amount: "$15K-$50K" },
+    { date: "Mar 26", member: "Kean (R-NJ)",     ticker: "JNJ",  type: "SELL", amount: "$1K-$15K" },
+    { date: "Apr 02", member: "Pelosi (D-CA)",   ticker: "VRTX", type: "BUY",  amount: "$50K-$100K" },
+    { date: "Apr 14", member: "Crenshaw (R-TX)", ticker: "LLY",  type: "BUY",  amount: "$15K-$50K" },
+  ];
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="px-3 py-2 border-b border-border bg-surface/40 flex items-center justify-between">
+        <span className="text-xs font-semibold">House PTR Filings</span>
+        <span className="text-[10px] font-mono text-muted">645 trades</span>
+      </div>
+      <table className="w-full text-[12px]">
+        <tbody>
+          {trades.map((t, i) => (
+            <tr key={i} className="border-b border-border/50 last:border-b-0">
+              <td className="px-3 py-1.5 font-mono text-muted text-[11px]">{t.date}</td>
+              <td className="px-3 py-1.5">{t.member}</td>
+              <td className="px-3 py-1.5">
+                <span className="font-mono font-semibold text-accent">{t.ticker}</span>
+              </td>
+              <td className="px-3 py-1.5">
+                <span className={cn(
+                  "text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider",
+                  t.type === "BUY"
+                    ? "bg-positive/15 text-positive"
+                    : "bg-negative/15 text-negative"
+                )}>
+                  {t.type}
+                </span>
+              </td>
+              <td className="px-3 py-1.5 text-right font-mono text-[11px] text-muted">{t.amount}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Mock 5: Price Chart with Insider Overlay ─────────────────────────────
+function PriceChartMock() {
+  // Stylized SVG line chart with green/red dots for insider buys/sells
+  const w = 460, h = 200;
+  const path = "M0,140 L40,135 L80,150 L120,120 L160,100 L200,90 L240,70 L260,55 L280,40 L320,50 L360,35 L400,25 L440,30 L460,28";
+  const insiders = [
+    { x: 80,  y: 150, type: "sell" },
+    { x: 200, y: 90,  type: "buy"  },
+    { x: 280, y: 40,  type: "buy"  },
+    { x: 360, y: 35,  type: "sell" },
+  ];
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="font-mono font-bold text-sm">MRNA</span>
+          <span className="font-mono text-sm">$28.34</span>
+          <span className="text-[10px] font-mono text-positive bg-positive/10 px-1 py-0.5 rounded">+18.4%</span>
+        </div>
+        <div className="flex items-center gap-2 text-[9px] text-muted">
+          <span className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-positive" /> Insider Buy
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-negative" /> Insider Sell
+          </span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[170px]">
+        <defs>
+          <linearGradient id="priceArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
+          </linearGradient>
+          <pattern id="grid" width="46" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 46 0 L 0 0 0 40" fill="none" stroke="var(--color-border)" strokeWidth="0.5" opacity="0.4" />
+          </pattern>
+        </defs>
+        <rect width={w} height={h} fill="url(#grid)" />
+        <path d={`${path} L${w},${h} L0,${h} Z`} fill="url(#priceArea)" />
+        <path d={path} fill="none" stroke="var(--color-accent)" strokeWidth="2" />
+        {insiders.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r="6" fill={p.type === "buy" ? "var(--color-positive)" : "var(--color-negative)"} opacity="0.2" />
+            <circle cx={p.x} cy={p.y} r="3.5" fill={p.type === "buy" ? "var(--color-positive)" : "var(--color-negative)"} stroke="var(--color-background)" strokeWidth="1.5" />
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+// ── Mock 6: Most Shorted Biotechs ────────────────────────────────────────
+function ShortInterestMock() {
+  const tickers = [
+    { ticker: "KMTS", name: "Kestra Medical",        pct: 80.8 },
+    { ticker: "PROF", name: "Profound Medical",      pct: 79.9 },
+    { ticker: "LBRX", name: "LB Pharma",             pct: 78.7 },
+    { ticker: "NERV", name: "Minerva Neurosciences", pct: 75.4 },
+    { ticker: "ELTX", name: "Elicio Therapeutics",   pct: 74.8 },
+  ];
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="px-3 py-2 border-b border-border bg-surface/40 flex items-center justify-between">
+        <span className="text-xs font-semibold">Most-Shorted Biotechs</span>
+        <span className="text-[10px] font-mono text-muted">FINRA · 30d avg</span>
+      </div>
+      <div className="p-3 space-y-2.5">
+        {tickers.map((t) => (
+          <div key={t.ticker} className="grid grid-cols-[80px_1fr_60px] items-center gap-3">
+            <div className="flex flex-col">
+              <span className="font-mono font-bold text-[12px] text-accent">{t.ticker}</span>
+              <span className="text-[9px] text-muted truncate">{t.name}</span>
+            </div>
+            <div className="h-2 rounded-full bg-surface overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-negative/60 to-negative rounded-full"
+                style={{ width: `${t.pct}%` }}
+              />
+            </div>
+            <span className="text-right font-mono text-[11px] font-semibold text-negative">
+              {t.pct.toFixed(1)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FeatureShowcase() {
+  return (
+    <section className="bg-gradient-to-b from-background via-surface/20 to-background border-y border-border/50">
+      <div className="max-w-6xl mx-auto px-6 py-24 space-y-32">
+        <div className="text-center">
+          <p className="text-sm font-semibold text-accent uppercase tracking-wider">A closer look</p>
+          <h2 className="text-3xl md:text-4xl font-bold mt-3">Built for biotech, not generic stocks</h2>
+          <p className="text-muted mt-4 max-w-xl mx-auto text-[15px] leading-relaxed">
+            Every feature is purpose-built for biotech's binary events — FDA decisions, trial readouts,
+            insider activity around catalysts. Here&apos;s what you actually see when you log in.
+          </p>
+        </div>
+
+        <ShowcaseRow
+          eyebrow="PDUFA & Catalyst Calendar"
+          title="Never miss an FDA decision"
+          description="Every PDUFA date, advisory committee meeting, and trial readout in one calendar. Exact-day events get pinned to the day; month-precision events float at the top of the month so the layout stays honest."
+          bullets={[
+            "1,485+ upcoming biotech catalysts indexed",
+            "Exact PDUFA dates auto-extracted from 8-K press releases",
+            "FDA decision outcomes auto-cross-referenced with OpenFDA",
+          ]}
+          mock={<CalendarMock />}
+        />
+
+        <ShowcaseRow
+          eyebrow="Drug Pipelines & Revenue"
+          title="See every program from Phase 1 to $20B+ marketed"
+          description="5,500+ drug programs across 1,000+ companies, with annual revenue extracted from 10-K disaggregated revenue tables via Claude. Mounjaro, Zepbound, Spikevax, Trulicity — all at exact dollar figures."
+          bullets={[
+            "Per-drug annual revenue from 10-K filings (LLY, AMGN, BIIB, etc.)",
+            "Pipeline programs auto-extracted for thin-coverage tickers",
+            "Phase tracking from Preclinical through Marketed",
+          ]}
+          mock={<PipelineMock />}
+          reverse
+        />
+
+        <ShowcaseRow
+          eyebrow="Press Releases · AI Summaries"
+          title="The only signal in the 8-K firehose"
+          description="Every biotech 8-K Item 7.01 / 8.01 press release, with a Claude-generated 2-sentence summary that tells you what happened AND why it matters to investors. Skip the boilerplate."
+          bullets={[
+            "645+ press releases indexed across the biotech universe",
+            "AI summaries identify the news angle in 2 sentences",
+            "Routine filings auto-tagged so you can ignore them",
+          ]}
+          mock={<PressReleasesMock />}
+        />
+
+        <ShowcaseRow
+          eyebrow="Congressional Trades"
+          title="See what Congress is buying"
+          description="Pulled directly from disclosures-clerk.house.gov PTRs (Periodic Transaction Reports) and filtered to the biotech universe. Pelosi's VRTX position, Cisneros's BBIO buys — they're all here, days after they hit the public record."
+          bullets={[
+            "645 biotech trades from US House members (last 12 months)",
+            "Sourced from official PTR PDFs — not a third-party mirror",
+            "Filterable by ticker, member, party, trade type",
+          ]}
+          mock={<CongressTradesMock />}
+          reverse
+        />
+
+        <ShowcaseRow
+          eyebrow="Price Charts + Insider Overlay"
+          title="Insider activity, plotted on the price chart"
+          description="Form 4 buys (green) and sells (red) plotted on a 1-year price chart for every ticker we track. See exactly when management was loading up — usually right before a catalyst they knew was coming."
+          bullets={[
+            "1 year of OHLCV history for 500+ biotech tickers + 4 ETFs",
+            "21,612 Form 4 insider transactions indexed",
+            "Sparklines + days-to-cover from FINRA Reg SHO",
+          ]}
+          mock={<PriceChartMock />}
+        />
+
+        <ShowcaseRow
+          eyebrow="Short Interest & Edge"
+          title="Most-shorted biotechs, ranked"
+          description="Daily short-volume from FINRA Reg SHO covering 53,000+ rows of biotech short interest. Filter out warrants and units — see only the legitimately shorted small-caps where short squeezes actually happen."
+          bullets={[
+            "53,053 short-interest rows from FINRA's free public feed",
+            "30-day avg short_pct ranking by ticker",
+            "Top 10 movers + catalyst impact stats",
+          ]}
+          mock={<ShortInterestMock />}
+          reverse
+        />
+
+        <div className="text-center pt-4">
+          <Link
+            href="/dashboard"
+            className="group inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-black font-bold text-[14px] hover:bg-accent-hover transition-all hover:shadow-lg hover:shadow-accent/20"
+          >
+            Tour the dashboard
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 /* ── How It Works ── */
 function HowItWorks() {
