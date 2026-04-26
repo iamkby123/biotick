@@ -22,6 +22,7 @@ import {
   Megaphone,
   Handshake,
   Landmark,
+  TrendingDown,
 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { cn, formatPrice, formatMarketCap } from "@/lib/utils";
@@ -40,6 +41,7 @@ const QUICK_LINKS = [
   { href: "/deals", label: "Deals", icon: Handshake, keywords: "m&a acquisitions partnerships material agreements officer changes" },
   { href: "/adcom", label: "FDA AdCom", icon: Users, keywords: "advisory committee meeting fda approval" },
   { href: "/congress-trades", label: "Congress Trades", icon: Landmark, keywords: "house senate ptr politician stock act" },
+  { href: "/short-interest", label: "Short Interest", icon: TrendingDown, keywords: "shorts most shorted finra reg sho days to cover" },
   { href: "/earnings", label: "Earnings Calendar", icon: DollarSign, keywords: "reports" },
   { href: "/insider-trades", label: "Insider Trades", icon: UserCheck, keywords: "form 4 buying selling" },
   { href: "/conferences", label: "Conferences", icon: Users, keywords: "investor day asco" },

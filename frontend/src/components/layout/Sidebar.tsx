@@ -24,6 +24,7 @@ import {
   Megaphone,
   Handshake,
   Landmark,
+  TrendingDown,
   Shield,
   ChevronLeft,
   ChevronRight,
@@ -58,6 +59,7 @@ const navSections = [
       { href: "/press-releases", label: "Press Releases", icon: Megaphone },
       { href: "/deals", label: "Deals", icon: Handshake },
       { href: "/congress-trades", label: "Congress Trades", icon: Landmark },
+      { href: "/short-interest", label: "Short Interest", icon: TrendingDown },
     ],
   },
   {

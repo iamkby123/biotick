@@ -173,12 +173,17 @@ export default function CompanyDetailPage({
     enabled: activeTab === "overview",
   });
 
+  // Short-interest is now its own page (/short-interest); no longer
+  // fetched on the company detail page.
+
+  // Institutional ownership + insider sentiment moved to a lightweight
+  // /edge/short-interest/{ticker} response — keep using it for the
+  // Overview's institutional-holdings panel only.
   const { data: shortData } = useQuery<{
-    short_interest: Array<{ date: string; short_interest: number; days_to_cover: number }>;
     institutional_ownership: Array<{ name: string; shares: number; change: number }>;
     insider_sentiment: Array<{ month: string; change: number; mspr: number }>;
   }>({
-    queryKey: ["short-interest", ticker],
+    queryKey: ["short-interest-edge", ticker],
     queryFn: () => fetchAPI(`/edge/short-interest/${ticker}`),
     enabled: activeTab === "overview",
   });
@@ -556,7 +561,7 @@ function OverviewTab({
   trialsTotal: number;
   filingsCount: number;
   competitors: { therapeutic_areas: string[]; competitors: Array<{ ticker: string; name: string; price: number | null; market_cap: number | null; pipeline_size: number }> } | undefined;
-  shortInterest: { short_interest: Array<{ date: string; short_interest: number; days_to_cover: number }>; institutional_ownership: Array<{ name: string; shares: number; change: number }>; insider_sentiment: Array<{ month: string; change: number; mspr: number }> } | undefined;
+  shortInterest: { institutional_ownership: Array<{ name: string; shares: number; change: number }>; insider_sentiment: Array<{ month: string; change: number; mspr: number }> } | undefined;
   institutional: { ticker: string; holdings: InstitutionalHoldingRow[]; total: number; total_value: number; total_shares: number } | undefined;
   etfs: { ticker: string; etfs: ETFHoldingRow[]; total: number } | undefined;
 }) {
@@ -859,41 +864,6 @@ function OverviewTab({
         </div>
       )}
 
-      {/* Short Interest */}
-      {shortInterest && shortInterest.short_interest.length > 0 && (
-        <div className="rounded-lg border border-border p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Short Interest History</h3>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            {shortInterest.short_interest.slice(-1).map((s, i) => (
-              <div key={i}>
-                <p className="text-[10px] text-muted uppercase">Latest Short Interest</p>
-                <p className="text-lg font-bold font-mono">{s.short_interest ? formatNumber(s.short_interest) : "N/A"}</p>
-                <p className="text-[11px] text-muted">{s.days_to_cover?.toFixed(1)} days to cover</p>
-              </div>
-            ))}
-          </div>
-          <div className="rounded-lg border border-border overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr className="bg-surface/50 border-b border-border">
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted">Date</th>
-                  <th className="text-right px-3 py-2 text-[10px] font-semibold text-muted">Short Interest</th>
-                  <th className="text-right px-3 py-2 text-[10px] font-semibold text-muted">Days to Cover</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shortInterest.short_interest.map((s, i) => (
-                  <tr key={i} className="border-b border-border last:border-b-0">
-                    <td className="px-3 py-1.5 font-mono text-muted">{s.date}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{s.short_interest ? formatNumber(s.short_interest) : "N/A"}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{s.days_to_cover?.toFixed(1) || "N/A"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
