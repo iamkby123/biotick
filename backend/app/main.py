@@ -184,6 +184,19 @@ async def scheduled_drug_sales_sync():
         logger.error(f"Scheduled drug sales failed: {e}")
 
 
+async def scheduled_data_quality_audit():
+    """Nightly data-quality audit: cross-checks DB against authoritative
+    sources, auto-fixes drug-name dose typos + stale catalysts, reports
+    counts on the rest."""
+    try:
+        from app.sync.data_quality_audit import run_data_quality_audit
+        async with async_session() as db:
+            findings = await run_data_quality_audit(db)
+        logger.info(f"Scheduled data-quality audit: {findings}")
+    except Exception as e:
+        logger.error(f"Scheduled data-quality audit failed: {e}")
+
+
 async def scheduled_pdufa_extractor_sync():
     """Daily regex pass over press_releases to pick up new exact PDUFA
     target-action dates from 8-K announcements."""
@@ -309,6 +322,14 @@ async def lifespan(app: FastAPI):
         scheduled_drug_sales_sync,
         CronTrigger(day_of_week="sat", hour=6, minute=0),
         id="drug_sales_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_data_quality_audit,
+        # Run after every other sync of the day so it can catch issues
+        # introduced by them.
+        CronTrigger(hour=4, minute=30),
+        id="data_quality_audit",
         replace_existing=True,
     )
     scheduler.add_job(

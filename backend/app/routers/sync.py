@@ -31,6 +31,7 @@ from app.sync.congress_trades_sync import sync_congress_trades
 from app.sync.drug_sales_sync import sync_drug_sales
 from app.sync.drug_pipeline_sync import sync_drug_pipelines
 from app.sync.pdufa_date_extractor import sync_pdufa_dates_from_press_releases
+from app.sync.data_quality_audit import run_data_quality_audit
 
 logger = logging.getLogger(__name__)
 
@@ -416,6 +417,18 @@ async def trigger_drug_sales(limit: int = 25):
         **result,
         "message": f"Drug-sales extraction started ({limit} 10-Ks, ~${limit * 0.03:.2f} budget).",
     }
+
+
+@router.post("/data-quality")
+async def trigger_data_quality():
+    """Run the data-quality audit. Auto-fixes drug-name dose suffixes,
+    flips stale catalysts to is_past=true, and reports counts on harder
+    drift (late insider filings, missing summaries, dead NCT IDs)."""
+    result = _fire(
+        "DATA_QUALITY_AUDIT",
+        lambda: _wrap("DATA_QUALITY_AUDIT", run_data_quality_audit),
+    )
+    return {**result, "message": "Data-quality audit started."}
 
 
 @router.post("/pdufa-extract")
