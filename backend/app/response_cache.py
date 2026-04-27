@@ -41,7 +41,8 @@ CACHE_RULES: list[tuple[str, int]] = [
     ("/api/trials",              120),
     ("/api/competitors",         300),
     ("/api/news",                120),
-    ("/api/feed",                120),
+    ("/api/feed",                 60),  # tightened — feed is meant to be fresh
+    ("/api/freshness",            30),  # live status indicator
     ("/api/short-interest",      600),  # daily data, 10 min cache
     ("/api/historical/prices",   300),  # candles, 5 min cache
     ("/api/press-releases",      300),

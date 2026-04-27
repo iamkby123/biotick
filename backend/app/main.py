@@ -37,6 +37,7 @@ from app.routers import (
     news,
     short_interest,
     feed,
+    freshness,
     press_releases,
     deals,
     adcom,
@@ -198,6 +199,21 @@ async def scheduled_drug_class_tagger():
         logger.error(f"Scheduled drug_class_tagger failed: {e}")
 
 
+async def scheduled_edgar_fast_path():
+    """Every-10-minute fast-path: poll EDGAR's firmwide latest-filings RSS
+    and ingest any biotech-relevant new filings immediately. Bridges the
+    gap between full filing_sync sweeps so users see new 8-Ks / Form 4s
+    within ~10 min of being filed."""
+    try:
+        from app.sync.edgar_fast_path import sync_edgar_fast_path
+        async with async_session() as db:
+            count = await sync_edgar_fast_path(db)
+        if count:
+            logger.info(f"Scheduled edgar_fast_path: {count} new filings")
+    except Exception as e:
+        logger.error(f"Scheduled edgar_fast_path failed: {e}")
+
+
 async def scheduled_data_quality_audit():
     """Nightly data-quality audit: cross-checks DB against authoritative
     sources, auto-fixes drug-name dose typos + stale catalysts, reports
@@ -271,8 +287,21 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.add_job(
+        scheduled_edgar_fast_path,
+        # Every 10 min — polls EDGAR's firmwide latest-filings ATOM feed
+        # and ingests any biotech filings immediately. Bridges the gap
+        # between full filing_sync sweeps.
+        IntervalTrigger(minutes=10),
+        id="edgar_fast_path",
+        replace_existing=True,
+    )
+    scheduler.add_job(
         scheduled_filing_sync,
-        CronTrigger(hour="*/6", minute=30),
+        # Full sweep across all 1054 companies every 3h. Each run takes
+        # ~25 min (chunks of companies pulled from EDGAR submissions API).
+        # The fast-path RSS-based sync below catches new filings between
+        # full sweeps so users see them within ~10 min.
+        CronTrigger(hour="*/3", minute=30),
         id="filing_sync",
         replace_existing=True,
     )
@@ -284,7 +313,11 @@ async def lifespan(app: FastAPI):
     )
     scheduler.add_job(
         scheduled_news_sync,
-        IntervalTrigger(minutes=15),
+        # 5-minute polling — RSS feeds publish within minutes of an
+        # article going live, so this gets users biotech news within
+        # ~5 min of source publication. Free; no rate limits to worry
+        # about on Endpoints / FierceBio / STAT feeds.
+        IntervalTrigger(minutes=5),
         id="news_sync",
         replace_existing=True,
     )
@@ -308,7 +341,11 @@ async def lifespan(app: FastAPI):
     )
     scheduler.add_job(
         scheduled_eight_k_pipeline,
-        CronTrigger(hour=1, minute=0),  # after overnight filing_sync
+        # Every 2 hours — biotech press releases (drug data, M&A,
+        # leadership changes) are time-sensitive. Each run only processes
+        # filings not yet in press_releases / deals tables, so reruns
+        # are idempotent and quick if nothing new arrived.
+        IntervalTrigger(hours=2),
         id="eight_k_pipeline",
         replace_existing=True,
     )
@@ -357,9 +394,10 @@ async def lifespan(app: FastAPI):
     )
     scheduler.add_job(
         scheduled_pdufa_extractor_sync,
-        # Runs after the 8-K pipeline at 01:00 so fresh press releases
-        # have already been parsed into body_text before we scan them.
-        CronTrigger(hour=2, minute=0),
+        # Runs every 2 hours, offset by 30 min from eight_k_pipeline so
+        # fresh press releases have body_text populated before we regex
+        # them. Cheap regex pass, no API costs.
+        IntervalTrigger(hours=2, jitter=300),  # +/-5 min jitter
         id="pdufa_extractor_sync",
         replace_existing=True,
     )
@@ -373,8 +411,8 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
     logger.info(
-        "Scheduler started — prices every 30min, filings every 6h, "
-        "trials daily, news every 15min"
+        "Scheduler started — news every 5min, EDGAR fast-path every 10min, "
+        "prices every 30min, 8-K pipeline every 2h, filing sweep every 3h"
     )
 
     yield
@@ -448,6 +486,7 @@ app.include_router(stripe_webhook.router)
 app.include_router(news.router)
 app.include_router(short_interest.router)
 app.include_router(feed.router)
+app.include_router(freshness.router)
 app.include_router(press_releases.router)
 app.include_router(deals.router)
 app.include_router(adcom.router)
