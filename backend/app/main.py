@@ -186,6 +186,19 @@ async def scheduled_drug_sales_sync():
         logger.error(f"Scheduled drug sales failed: {e}")
 
 
+async def scheduled_drug_dedup():
+    """Weekly merge of duplicate drug rows. Idempotent — safe to run as
+    often as we want. Catches dupes introduced by the daily trial_sync
+    pulling the same molecule under multiple intervention-label variants."""
+    try:
+        from app.sync.drug_dedup import sync_drug_dedup
+        async with async_session() as db:
+            result = await sync_drug_dedup(db)
+        logger.info(f"Scheduled drug_dedup: {result}")
+    except Exception as e:
+        logger.error(f"Scheduled drug_dedup failed: {e}")
+
+
 async def scheduled_drug_class_tagger():
     """Weekly drug-class tagger: classifies any new drugs added since last
     run. Tier 1 + 2 are free; Tier 3 (Claude) only fires for genuinely
@@ -373,6 +386,16 @@ async def lifespan(app: FastAPI):
         scheduled_drug_sales_sync,
         CronTrigger(day_of_week="sat", hour=6, minute=0),
         id="drug_sales_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_drug_dedup,
+        # Run before drug_class_tagger so newly-tagged dupes get merged
+        # before the tagger spends Claude tokens on them. Sundays 7:30am
+        # UTC sits between drug_pipelines (Sun 6am) and drug_class_tagger
+        # (Sun 8am).
+        CronTrigger(day_of_week="sun", hour=7, minute=30),
+        id="drug_dedup",
         replace_existing=True,
     )
     scheduler.add_job(
