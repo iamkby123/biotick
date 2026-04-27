@@ -286,6 +286,86 @@ async def stripe_status():
     }
 
 
+@router.post("/sync-me")
+@limiter.limit("10/minute")
+async def sync_me(
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Self-service: re-link the current logged-in user to their Stripe
+    sub by email. Fixes the case where someone paid via Stripe under
+    email X, then later signed up with email/password using email X
+    (creating a different Supabase user_id) and now looks "free".
+
+    Flow: verify JWT → read email from auth.users → look up Stripe by
+    email → if active sub exists, set the *current* profile to pro and
+    link the stripe_customer_id to this user_id.
+    """
+    if not stripe.api_key:
+        raise HTTPException(500, "Stripe not configured")
+
+    # Pull the user's email from the auth.users row (we already have
+    # the verified user_id from the JWT, but no email yet).
+    async with async_session() as db:
+        row = (await db.execute(
+            text("SELECT email FROM auth.users WHERE id = :uid"),
+            {"uid": user_id},
+        )).fetchone()
+    if not row or not row[0]:
+        raise HTTPException(404, "User has no email — cannot sync")
+    email = row[0].strip().lower()
+
+    try:
+        customers = stripe.Customer.list(email=email, limit=10)
+        if not customers.data:
+            return {"linked": False, "reason": "no_stripe_customer"}
+
+        # Find the customer with an active sub (a user might have multiple
+        # cancelled customers from past trials — pick the one that still pays).
+        active_customer = None
+        active_sub_status = None
+        for c in customers.data:
+            subs = stripe.Subscription.list(customer=c.id, status="all", limit=10)
+            for s in subs.data:
+                if s.status in ("active", "trialing"):
+                    active_customer = c
+                    active_sub_status = s.status
+                    break
+            if active_customer:
+                break
+
+        if not active_customer:
+            return {"linked": False, "reason": "no_active_subscription"}
+
+        # Update THIS user_id's profile to pro + attach stripe_customer_id
+        # directly to it. This handles the duplicate-account case.
+        async with async_session() as db:
+            await db.execute(
+                text(
+                    "UPDATE profiles "
+                    "SET plan = 'pro', stripe_customer_id = :cid, updated_at = now() "
+                    "WHERE id = :uid"
+                ),
+                {"cid": active_customer.id, "uid": user_id},
+            )
+            await db.commit()
+        logger.info(
+            f"sync-me: linked user_id={user_id} email={email} "
+            f"to stripe_customer={active_customer.id} ({active_sub_status})"
+        )
+        return {
+            "linked": True,
+            "plan": "pro",
+            "customer_id": active_customer.id,
+            "subscription_status": active_sub_status,
+        }
+    except stripe.error.StripeError as e:
+        raise HTTPException(500, f"Stripe error: {e}")
+    except Exception as e:
+        logger.error(f"sync-me failed for user_id={user_id}: {e}")
+        raise HTTPException(500, str(e))
+
+
 @router.post("/sync-customer", dependencies=[Depends(require_admin_key)])
 async def sync_customer_by_email(email: str):
     """Manually sync a Stripe customer's subscription status by email.
