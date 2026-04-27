@@ -136,12 +136,18 @@ export default function NewsPage() {
       if (activeKind) params.set("kind", activeKind);
       return fetchAPI(`/feed?${params}`);
     },
+    // Silently refetch every 60s so the page picks up new events on
+    // its own without the user clicking refresh. Backend cache TTL
+    // for /api/feed is also 60s so this stays cheap.
+    refetchInterval: 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: countData } = useQuery<KindCounts>({
     queryKey: ["feed-kinds"],
     queryFn: () => fetchAPI(`/feed/kinds?days=${DRAMATIC_WINDOW_DAYS}`),
     staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   // Client-side keyword filter (cheap; the server doesn't index headlines)
@@ -177,12 +183,9 @@ export default function NewsPage() {
           <Sparkles className="w-4 h-4" />
           Edge
         </div>
-        <div className="flex items-center gap-3 flex-wrap mt-1">
-          <h1 className="text-3xl font-bold tracking-tight">
-            Biotech Feed
-          </h1>
-          <FreshnessBadge />
-        </div>
+        <h1 className="text-3xl font-bold tracking-tight mt-1">
+          Biotech Feed
+        </h1>
         <p className="text-sm text-muted mt-1">
           Only the dramatic stuff from the last 7 days — FDA decisions,
           Phase 3 readouts, M&amp;A, leadership shake-ups, ≥$1M insider trades,
@@ -427,59 +430,3 @@ function FeedCard({ item }: { item: FeedItem }) {
 }
 
 
-// ── Freshness badge ────────────────────────────────────────────────────
-//
-// Tiny "live" indicator that shows the freshest event timestamp across
-// the whole feed. Refreshes every 30s. Pulses green when data is <10
-// min old; amber for 10-60 min; muted otherwise.
-
-interface FreshnessResp {
-  news?: string | null;
-  press?: string | null;
-  filings?: string | null;
-  insider?: string | null;
-}
-
-function FreshnessBadge() {
-  const { data } = useQuery<FreshnessResp>({
-    queryKey: ["freshness"],
-    queryFn: () => fetchAPI<FreshnessResp>("/freshness"),
-    refetchInterval: 30 * 1000,
-    staleTime: 30 * 1000,
-  });
-
-  // Pick the most-recent of the relevant fields
-  const ts = [data?.news, data?.press, data?.filings, data?.insider]
-    .filter((s): s is string => !!s)
-    .sort()
-    .pop();
-  if (!ts) return null;
-
-  const ageMin = (Date.now() - new Date(ts).getTime()) / 60000;
-  const tone =
-    ageMin < 10
-      ? "bg-positive/15 text-positive"
-      : ageMin < 60
-        ? "bg-warning/15 text-warning"
-        : "bg-muted/15 text-muted";
-  const label = formatRelative(ts);
-  const isLive = ageMin < 10;
-
-  return (
-    <span
-      title={`Latest event: ${new Date(ts).toLocaleString()}`}
-      className={cn(
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-widest",
-        tone
-      )}
-    >
-      <span
-        className={cn(
-          "w-1.5 h-1.5 rounded-full",
-          isLive ? "bg-positive animate-pulse" : "bg-current"
-        )}
-      />
-      Live · {label}
-    </span>
-  );
-}
