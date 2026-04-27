@@ -235,43 +235,84 @@ Respond with ONLY the class name (one of the above), nothing else.
 """
 
 
-async def _classify_with_claude(drug_name: str, mechanism: str | None) -> str | None:
-    """Send a single drug to Claude for classification. Returns class or None."""
+_VALID_CLASSES = {
+    "monoclonal_antibody", "bispecific_antibody", "antibody_drug_conjugate",
+    "peptide", "small_molecule", "mrna", "sirna", "antisense_oligonucleotide",
+    "gene_therapy", "cell_therapy", "vaccine", "enzyme_replacement",
+    "fusion_protein", "radiopharmaceutical", "biosimilar", "other",
+}
+
+_CLAUDE_BATCH_SYSTEM = _CLAUDE_SYSTEM + """
+
+When classifying a NUMBERED LIST of drugs, return ONE class per line in
+the same order. Format: "<n>: <class>". Nothing else. Example:
+
+1: small_molecule
+2: monoclonal_antibody
+3: peptide
+"""
+
+
+async def _classify_batch_with_claude(
+    drugs: list[tuple[str, str | None]]
+) -> list[str | None]:
+    """Classify many drugs in one Claude call. ~10× speedup over the
+    per-drug variant. Returns a list of class names (or None for failures)
+    aligned with the input list."""
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not key:
-        return None
+    if not key or not drugs:
+        return [None] * len(drugs)
     try:
         from anthropic import AsyncAnthropic
     except ImportError:
-        return None
+        return [None] * len(drugs)
+
     client = AsyncAnthropic(api_key=key)
-    user_msg = f"Drug name: {drug_name}"
-    if mechanism:
-        user_msg += f"\nMechanism: {mechanism[:200]}"
+
+    # Build a numbered prompt
+    lines = []
+    for i, (name, mech) in enumerate(drugs, start=1):
+        line = f"{i}. {name}"
+        if mech:
+            line += f"  | mechanism: {mech[:120]}"
+        lines.append(line)
+    user_msg = "Classify each drug. Respond with one line per drug as '<n>: <class>'.\n\n" + "\n".join(lines)
+
     try:
         msg = await client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=20,
-            system=[{"type": "text", "text": _CLAUDE_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            max_tokens=40 * len(drugs),  # ~40 tokens per response line
+            system=[{"type": "text", "text": _CLAUDE_BATCH_SYSTEM, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_msg}],
         )
     except Exception as e:
         err = str(e)
         if "credit balance is too low" in err:
             raise RuntimeError("CREDITS_EXHAUSTED") from e
-        logger.warning(f"Claude class failed for {drug_name}: {e}")
-        return None
+        logger.warning(f"Claude batch class failed (size={len(drugs)}): {e}")
+        return [None] * len(drugs)
+
     blocks = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
-    raw = "".join(blocks).strip().lower()
-    # Strip trailing punctuation, accept only known classes
-    raw = re.sub(r"[^a-z_]", "", raw)
-    valid = {
-        "monoclonal_antibody", "bispecific_antibody", "antibody_drug_conjugate",
-        "peptide", "small_molecule", "mrna", "sirna", "antisense_oligonucleotide",
-        "gene_therapy", "cell_therapy", "vaccine", "enzyme_replacement",
-        "fusion_protein", "radiopharmaceutical", "biosimilar", "other",
-    }
-    return raw if raw in valid else None
+    raw = "".join(blocks).strip()
+
+    # Parse "<n>: <class>" lines
+    out: list[str | None] = [None] * len(drugs)
+    for ln in raw.splitlines():
+        m = re.match(r"\s*(\d+)\s*[:.\-)]\s*([a-z_]+)\b", ln, re.IGNORECASE)
+        if not m:
+            continue
+        idx = int(m.group(1)) - 1
+        cls = m.group(2).strip().lower()
+        if 0 <= idx < len(drugs) and cls in _VALID_CLASSES:
+            out[idx] = cls
+    return out
+
+
+async def _classify_with_claude(drug_name: str, mechanism: str | None) -> str | None:
+    """Single-drug shim for callers that want it. Internally just delegates
+    to the batch path with a list of one."""
+    results = await _classify_batch_with_claude([(drug_name, mechanism)])
+    return results[0]
 
 
 # ─── Sync runner ─────────────────────────────────────────────────────────
@@ -310,57 +351,93 @@ async def sync_drug_classes(
         by_source: dict[str, int] = {"inn_suffix": 0, "keyword": 0, "claude": 0, "skipped": 0}
         claude_quota_exhausted = False
 
+        # Phase 1: walk all rows, apply free Tier 1 + Tier 2 rules. Anything
+        # that doesn't match falls into a "needs_claude" queue we process in
+        # batches below.
+        needs_claude: list[tuple[str, str, str, str | None]] = []  # (drug_id, name, generic, mechanism)
+
         for row in rows:
             drug_id, drug_name, generic_name, mechanism = row
-            cls: str | None = None
-            source: str | None = None
-
-            # Tier 1
-            cls = _tag_by_inn_suffix(drug_name, generic_name)
-            if cls:
-                source = "inn_suffix"
-
-            # Tier 2
+            cls: str | None = _tag_by_inn_suffix(drug_name, generic_name)
+            source: str | None = "inn_suffix" if cls else None
             if not cls:
                 cls = _tag_by_keyword(drug_name, mechanism)
                 if cls:
                     source = "keyword"
 
-            # Tier 3 — Claude. Skip if credits exhausted.
-            if not cls and not claude_quota_exhausted:
+            if cls:
+                # Write the class immediately for fast-path drugs.
                 try:
-                    cls = await _classify_with_claude(drug_name, mechanism)
-                    if cls:
-                        source = "claude"
-                        # Claude rate limit: ~30k input tokens/min on Tier 1.
-                        # Each call is ~150 tokens (cached system + small user
-                        # message + small completion). Pace at 1.5s = 40 calls/min
-                        # = 6k tokens/min, well under the cap.
-                        await asyncio.sleep(1.5)
-                except RuntimeError:
-                    claude_quota_exhausted = True
-                    logger.warning("drug_class_tagger: Claude credits exhausted; rest go to 'other'")
+                    async with db.begin_nested():
+                        await db.execute(
+                            text("UPDATE drugs SET drug_class=:c, drug_class_source=:s WHERE drug_id=:id"),
+                            {"c": cls, "s": source, "id": drug_id},
+                        )
+                    tagged += 1
+                    by_source[source] = by_source.get(source, 0) + 1
+                except Exception as e:
+                    logger.warning(f"  fast-path drug={drug_id}: {e}")
+            else:
+                needs_claude.append((drug_id, drug_name, generic_name or "", mechanism))
 
-            if not cls:
-                cls = "other"
-                source = "skipped"
+        await db.commit()
+        logger.info(f"  fast path done: {tagged} tagged, {len(needs_claude)} need Claude")
 
+        # Phase 2: batch the remainder through Claude. Batch size 20 keeps
+        # the prompt + response under 1k tokens combined; pace 4s between
+        # batches to stay under Tier-1 30k input tokens/min.
+        BATCH = 20
+        for i in range(0, len(needs_claude), BATCH):
+            if claude_quota_exhausted:
+                break
+            chunk = needs_claude[i : i + BATCH]
+            try:
+                results = await _classify_batch_with_claude(
+                    [(d[1], d[3]) for d in chunk]
+                )
+            except RuntimeError:
+                claude_quota_exhausted = True
+                logger.warning("drug_class_tagger: Claude credits exhausted")
+                break
+
+            for (drug_id, name, _, _), cls in zip(chunk, results):
+                if cls:
+                    try:
+                        async with db.begin_nested():
+                            await db.execute(
+                                text("UPDATE drugs SET drug_class=:c, drug_class_source='claude' WHERE drug_id=:id"),
+                                {"c": cls, "id": drug_id},
+                            )
+                        tagged += 1
+                        by_source["claude"] = by_source.get("claude", 0) + 1
+                    except Exception as e:
+                        logger.warning(f"  claude-path drug={drug_id}: {e}")
+
+            await db.commit()
+            logger.info(f"  batch {i // BATCH + 1}/{len(needs_claude) // BATCH + 1}: {tagged} total")
+            # 4 second pacing between batches
+            await asyncio.sleep(4)
+
+        # Anything still un-tagged (Claude returned nothing OR credits ran
+        # out) gets a placeholder so we don't re-try them next run.
+        leftover = (await db.execute(
+            text(
+                "SELECT drug_id FROM drugs "
+                "WHERE drug_class IS NULL "
+                "  AND drug_id = ANY(:ids)"
+            ),
+            {"ids": [d[0] for d in needs_claude]},
+        )).fetchall()
+        for (drug_id,) in leftover:
             try:
                 async with db.begin_nested():
                     await db.execute(
-                        text(
-                            "UPDATE drugs SET drug_class = :cls, drug_class_source = :src "
-                            "WHERE drug_id = :drug_id"
-                        ),
-                        {"cls": cls, "src": source, "drug_id": drug_id},
+                        text("UPDATE drugs SET drug_class='other', drug_class_source='skipped' WHERE drug_id=:id"),
+                        {"id": drug_id},
                     )
+                by_source["skipped"] = by_source.get("skipped", 0) + 1
                 tagged += 1
-                by_source[source] = by_source.get(source, 0) + 1
-                if tagged % 100 == 0:
-                    await db.commit()
-                    logger.info(f"  ...tagged {tagged}/{len(rows)} ({by_source})")
-            except Exception as e:
-                logger.warning(f"  drug={drug_id} update failed: {e}")
+            except Exception:
                 continue
         await db.commit()
 
