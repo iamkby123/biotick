@@ -172,11 +172,15 @@ async def _parse_form4(
     filing_date: date,
 ) -> int:
     """Parse a Form 4 XML filing for insider trade data."""
-    # Try to fetch the XML
-    # Form 4 primary doc URL may have xslF345X05/ prefix (XSLT transform) — strip it
-    clean_doc = primary_doc
-    if "xslF345X05/" in clean_doc:
-        clean_doc = clean_doc.split("xslF345X05/")[-1]
+    # Try to fetch the XML.
+    # Form 4 primary doc URLs come prefixed with an XSLT-transform path
+    # like `xslF345X05/foo.xml` or `xslF345X06/foo.xml`. We need the raw
+    # XML, not the transformed view, so strip ANY `xslF345Xnn/` prefix.
+    # Previously this only stripped X05 — when SEC rolled to X06, every
+    # new Form 4 silently failed to parse and we lost ~12 days of insider
+    # trades before catching it.
+    import re as _re
+    clean_doc = _re.sub(r"^xslF345X\d+/", "", primary_doc)
 
     xml_url = f"https://www.sec.gov/Archives/edgar/data/{int(company.cik)}/{acc_formatted}/{clean_doc}"
 
