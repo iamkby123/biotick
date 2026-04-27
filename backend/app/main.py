@@ -184,6 +184,19 @@ async def scheduled_drug_sales_sync():
         logger.error(f"Scheduled drug sales failed: {e}")
 
 
+async def scheduled_drug_class_tagger():
+    """Weekly drug-class tagger: classifies any new drugs added since last
+    run. Tier 1 + 2 are free; Tier 3 (Claude) only fires for genuinely
+    ambiguous names (typically <50 per week)."""
+    try:
+        from app.sync.drug_class_tagger import sync_drug_classes
+        async with async_session() as db:
+            count = await sync_drug_classes(db, only_unclassified=True, limit=2000)
+        logger.info(f"Scheduled drug_class_tagger: {count} tagged")
+    except Exception as e:
+        logger.error(f"Scheduled drug_class_tagger failed: {e}")
+
+
 async def scheduled_data_quality_audit():
     """Nightly data-quality audit: cross-checks DB against authoritative
     sources, auto-fixes drug-name dose typos + stale catalysts, reports
@@ -322,6 +335,15 @@ async def lifespan(app: FastAPI):
         scheduled_drug_sales_sync,
         CronTrigger(day_of_week="sat", hour=6, minute=0),
         id="drug_sales_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_drug_class_tagger,
+        # Run Sundays at 5am UTC, after the drug_pipelines sync at 6am Sun
+        # — wait, that's after pipelines. Better: run at 8am Sun so any
+        # newly-extracted drugs from the 6am pipeline run also get tagged.
+        CronTrigger(day_of_week="sun", hour=8, minute=0),
+        id="drug_class_tagger",
         replace_existing=True,
     )
     scheduler.add_job(

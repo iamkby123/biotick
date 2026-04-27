@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { PaywallBanner } from "@/components/PaywallGate";
@@ -888,49 +888,144 @@ function MiniStat({ label, value, sublabel, color }: { label: string; value: str
 }
 
 /* ── Pipeline Tab ── */
+
+// Compact label + tailwind class per drug-class. Keep these short — they
+// render as a tiny chip next to the drug name.
+const DRUG_CLASS_META: Record<string, { label: string; className: string }> = {
+  monoclonal_antibody:        { label: "mAb",           className: "bg-accent/15 text-accent" },
+  bispecific_antibody:        { label: "Bispecific",    className: "bg-accent/15 text-accent" },
+  antibody_drug_conjugate:    { label: "ADC",           className: "bg-accent/20 text-accent" },
+  peptide:                    { label: "Peptide",       className: "bg-positive/15 text-positive" },
+  small_molecule:             { label: "Small mol",     className: "bg-muted/15 text-muted" },
+  mrna:                       { label: "mRNA",          className: "bg-warning/15 text-warning" },
+  sirna:                      { label: "siRNA",         className: "bg-warning/10 text-warning" },
+  antisense_oligonucleotide:  { label: "ASO",           className: "bg-warning/10 text-warning" },
+  gene_therapy:               { label: "Gene therapy",  className: "bg-negative/15 text-negative" },
+  cell_therapy:               { label: "Cell therapy",  className: "bg-negative/15 text-negative" },
+  vaccine:                    { label: "Vaccine",       className: "bg-positive/10 text-positive" },
+  enzyme_replacement:         { label: "Enzyme",        className: "bg-positive/10 text-positive" },
+  fusion_protein:             { label: "Fusion",        className: "bg-accent/10 text-accent" },
+  radiopharmaceutical:        { label: "Radiopharm",    className: "bg-warning/15 text-warning" },
+  biosimilar:                 { label: "Biosimilar",    className: "bg-muted/10 text-muted" },
+  other:                      { label: "Other",         className: "bg-muted/10 text-muted" },
+};
+
 function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
+  const [classFilter, setClassFilter] = useState<string | null>(null);
+
+  // Derive the set of classes actually present in this pipeline so we
+  // only show filter chips for relevant modalities.
+  const classCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of pipeline) {
+      const k = d.drug_class || "other";
+      map[k] = (map[k] || 0) + 1;
+    }
+    return map;
+  }, [pipeline]);
+
+  const filtered = classFilter
+    ? pipeline.filter((d) => (d.drug_class || "other") === classFilter)
+    : pipeline;
+
   if (pipeline.length === 0) {
     return <EmptyState text="No pipeline data yet" />;
   }
 
+  const classKeys = Object.keys(classCounts).sort(
+    (a, b) => classCounts[b] - classCounts[a]
+  );
+
   return (
-    <div className="rounded-lg border border-border overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-surface/50 border-b border-border">
-            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Drug</th>
-            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Phase</th>
-            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Area</th>
-            <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Indication</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pipeline.map((drug) => (
-            <tr key={drug.drug_id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
-              <td className="px-4 py-3">
-                <Link href={`/drugs/${drug.drug_id}`} className="font-medium text-[13px] text-accent hover:underline">
-                  {drug.drug_name}
-                </Link>
-              </td>
-              <td className="px-4 py-3">
-                {drug.highest_phase && (
-                  <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium border", PHASE_COLORS[drug.highest_phase] || PHASE_COLORS.PRECLINICAL)}>
-                    {PHASE_LABELS[drug.highest_phase] || drug.highest_phase}
-                  </span>
+    <div className="space-y-4">
+      {/* Class filter chips — only show if there's >1 distinct class */}
+      {classKeys.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-widest text-muted/70 mr-1">
+            Modality:
+          </span>
+          <button
+            onClick={() => setClassFilter(null)}
+            className={cn(
+              "px-2 py-0.5 rounded text-[11px] transition-colors",
+              classFilter === null
+                ? "bg-accent/15 text-accent"
+                : "text-muted hover:text-foreground hover:bg-surface-hover"
+            )}
+          >
+            All ({pipeline.length})
+          </button>
+          {classKeys.map((k) => {
+            const meta = DRUG_CLASS_META[k] || DRUG_CLASS_META.other;
+            const active = classFilter === k;
+            return (
+              <button
+                key={k}
+                onClick={() => setClassFilter(active ? null : k)}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] transition-colors",
+                  active
+                    ? meta.className
+                    : "text-muted hover:text-foreground hover:bg-surface-hover"
                 )}
-              </td>
-              <td className="px-4 py-3">
-                {drug.therapeutic_area && (
-                  <span className={cn("px-2 py-0.5 rounded text-[11px]", THERAPEUTIC_AREA_COLORS[drug.therapeutic_area] || THERAPEUTIC_AREA_COLORS.Other)}>
-                    {drug.therapeutic_area}
-                  </span>
-                )}
-              </td>
-              <td className="px-4 py-3 text-[13px] text-muted max-w-[250px] truncate">{drug.indication || "N/A"}</td>
+              >
+                {meta.label} ({classCounts[k]})
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="rounded-lg border border-border overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-surface/50 border-b border-border">
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Drug</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Class</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Phase</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Area</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted">Indication</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filtered.map((drug) => {
+              const cls = drug.drug_class || "other";
+              const meta = DRUG_CLASS_META[cls] || DRUG_CLASS_META.other;
+              return (
+                <tr key={drug.drug_id} className="border-b border-border last:border-b-0 hover:bg-surface/80 transition-colors">
+                  <td className="px-4 py-3">
+                    <Link href={`/drugs/${drug.drug_id}`} className="font-medium text-[13px] text-accent hover:underline">
+                      {drug.drug_name}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    {drug.drug_class && (
+                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium", meta.className)}>
+                        {meta.label}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {drug.highest_phase && (
+                      <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium border", PHASE_COLORS[drug.highest_phase] || PHASE_COLORS.PRECLINICAL)}>
+                        {PHASE_LABELS[drug.highest_phase] || drug.highest_phase}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {drug.therapeutic_area && (
+                      <span className={cn("px-2 py-0.5 rounded text-[11px]", THERAPEUTIC_AREA_COLORS[drug.therapeutic_area] || THERAPEUTIC_AREA_COLORS.Other)}>
+                        {drug.therapeutic_area}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-[13px] text-muted max-w-[250px] truncate">{drug.indication || "N/A"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

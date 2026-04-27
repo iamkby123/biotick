@@ -19,6 +19,10 @@ class Drug(Base):
     highest_phase: Mapped[str | None] = mapped_column(String(20))  # PRECLINICAL, PHASE1, PHASE2, PHASE3, APPROVED
     status: Mapped[str | None] = mapped_column(String(20))  # ACTIVE, DISCONTINUED, APPROVED
     first_approval_date: Mapped[date | None] = mapped_column(Date)
+    # Therapeutic-modality class (peptide / monoclonal_antibody / mrna / etc.)
+    # Populated by app.sync.drug_class_tagger.
+    drug_class: Mapped[str | None] = mapped_column(String(40))
+    drug_class_source: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

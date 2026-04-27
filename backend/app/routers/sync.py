@@ -32,6 +32,7 @@ from app.sync.drug_sales_sync import sync_drug_sales
 from app.sync.drug_pipeline_sync import sync_drug_pipelines
 from app.sync.pdufa_date_extractor import sync_pdufa_dates_from_press_releases
 from app.sync.data_quality_audit import run_data_quality_audit
+from app.sync.drug_class_tagger import sync_drug_classes
 
 logger = logging.getLogger(__name__)
 
@@ -417,6 +418,26 @@ async def trigger_drug_sales(limit: int = 25):
         **result,
         "message": f"Drug-sales extraction started ({limit} 10-Ks, ~${limit * 0.03:.2f} budget).",
     }
+
+
+@router.post("/drug-classes")
+async def trigger_drug_classes(
+    only_unclassified: bool = True,
+    limit: int = 1000,
+):
+    """Tag drugs with therapeutic-modality class (peptide, mAb, mRNA, etc.).
+    Tier 1 (INN suffixes) + Tier 2 (keyword rules) are free.
+    Tier 3 (Claude fallback) costs ~$1 per 1k unmatched drugs."""
+    result = _fire(
+        "DRUG_CLASS_TAGGER",
+        lambda: _wrap(
+            "DRUG_CLASS_TAGGER",
+            sync_drug_classes,
+            only_unclassified=only_unclassified,
+            limit=limit,
+        ),
+    )
+    return {**result, "message": f"Drug-class tagger started (limit={limit})."}
 
 
 @router.post("/data-quality")

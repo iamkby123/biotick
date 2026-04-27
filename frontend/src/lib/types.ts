@@ -57,6 +57,8 @@ export interface Drug {
   highest_phase: string | null;
   status: string | null;
   first_approval_date: string | null;
+  drug_class: string | null;
+  drug_class_source: string | null;
 }
 
 export interface Trial {

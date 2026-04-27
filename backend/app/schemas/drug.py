@@ -13,6 +13,8 @@ class DrugResponse(BaseModel):
     highest_phase: str | None = None
     status: str | None = None
     first_approval_date: date | None = None
+    drug_class: str | None = None
+    drug_class_source: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
