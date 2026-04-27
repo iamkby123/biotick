@@ -111,9 +111,13 @@ async def feed(
               AND headline NOT ILIKE 'EX-%'
               AND headline NOT ILIKE '8-K%'
               AND headline NOT ILIKE 'Document%'
-              -- skip filename-like headlines (e.g. "bio-20260421", "wk-form4_...")
-              AND headline !~* '^[a-z0-9]+-[0-9]{6,}'
+              AND headline NOT ILIKE '%.htm%'
+              AND headline NOT ILIKE '%_8k%'
+              -- skip filename-like headlines (e.g. "bio-20260421", "mbrx20260422", "wk-form4_...")
+              AND headline !~* '^[a-z0-9]+-?[0-9]{6,}'
               AND headline !~* '^wk-'
+              -- skip just a company name + "8-K" (no actual press-release content)
+              AND headline !~* '8-K\\s*$'
             ORDER BY filed_date DESC
             LIMIT 200
         """
@@ -151,7 +155,10 @@ async def feed(
                 AND headline NOT ILIKE 'EX-%'
                 AND headline NOT ILIKE '8-K%'
                 AND headline NOT ILIKE 'Document%'
-                AND headline !~* '^[a-z0-9]+-[0-9]{6,}'
+                AND headline NOT ILIKE '%.htm%'
+                AND headline NOT ILIKE '%_8k%'
+                AND headline !~* '^[a-z0-9]+-?[0-9]{6,}'
+                AND headline !~* '8-K\\s*$'
               ))
             ORDER BY filed_date DESC
             LIMIT 200
@@ -191,7 +198,10 @@ async def feed(
                 AND headline NOT ILIKE 'EX-%'
                 AND headline NOT ILIKE '8-K%'
                 AND headline NOT ILIKE 'Document%'
-                AND headline !~* '^[a-z0-9]+-[0-9]{6,}'
+                AND headline NOT ILIKE '%.htm%'
+                AND headline NOT ILIKE '%_8k%'
+                AND headline !~* '^[a-z0-9]+-?[0-9]{6,}'
+                AND headline !~* '8-K\\s*$'
               ))
             ORDER BY filed_date DESC
             LIMIT 100
