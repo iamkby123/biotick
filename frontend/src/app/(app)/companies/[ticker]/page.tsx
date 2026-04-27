@@ -255,7 +255,13 @@ export default function CompanyDetailPage({
 
   const tabs = [
     { id: "overview" as const, label: "Overview" },
-    { id: "pipeline" as const, label: "Pipeline", count: pipeline?.length },
+    {
+      id: "pipeline" as const,
+      label: "Pipeline",
+      // Tab badge counts only ACTIVE programs (Phase 1-3 + Filed) so it
+      // reflects R&D activity, not the total of every CT.gov entry.
+      count: pipeline?.filter((d) => isActivePhase(d.highest_phase)).length,
+    },
     { id: "trials" as const, label: "Clinical Trials", count: trialsData?.total },
     { id: "options" as const, label: "Options Flow" },
     { id: "filings" as const, label: "SEC Filings", count: filingsData?.filings?.length },
@@ -910,23 +916,63 @@ const DRUG_CLASS_META: Record<string, { label: string; className: string }> = {
   other:                      { label: "Other",         className: "bg-muted/10 text-muted" },
 };
 
+// Phases that count as "active development pipeline" — Phase 4 / approved
+// / marketed are commercial products, not pipeline. NA / unknown phases
+// are usually old / discontinued trials and shouldn't inflate the count.
+const ACTIVE_PIPELINE_PHASES = new Set([
+  "PHASE1", "PHASE_1", "PHASE2", "PHASE_2", "PHASE3", "PHASE_3",
+  "FILED", "EARLY_PHASE_1",
+]);
+const MARKETED_PHASES = new Set([
+  "PHASE4", "PHASE_4", "MARKETED", "APPROVED",
+]);
+
+function isActivePhase(phase: string | null): boolean {
+  return phase ? ACTIVE_PIPELINE_PHASES.has(phase) : false;
+}
+function isMarketedPhase(phase: string | null): boolean {
+  return phase ? MARKETED_PHASES.has(phase) : false;
+}
+
 function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
   const [classFilter, setClassFilter] = useState<string | null>(null);
+  // Default view = "active" pipeline only. Toggle to see marketed
+  // products + everything else.
+  const [phaseScope, setPhaseScope] = useState<"active" | "marketed" | "all">("active");
 
-  // Derive the set of classes actually present in this pipeline so we
-  // only show filter chips for relevant modalities.
+  // Phase-bucket counts for the toggle badges
+  const phaseCounts = useMemo(() => {
+    let active = 0, marketed = 0;
+    for (const d of pipeline) {
+      if (isActivePhase(d.highest_phase)) active++;
+      else if (isMarketedPhase(d.highest_phase)) marketed++;
+    }
+    return { active, marketed, all: pipeline.length };
+  }, [pipeline]);
+
+  // Apply phase filter first, then class filter.
+  const phaseFiltered = useMemo(() => {
+    if (phaseScope === "all") return pipeline;
+    if (phaseScope === "marketed") {
+      return pipeline.filter((d) => isMarketedPhase(d.highest_phase));
+    }
+    return pipeline.filter((d) => isActivePhase(d.highest_phase));
+  }, [pipeline, phaseScope]);
+
+  // Derive class chip counts from the phase-filtered set so chips reflect
+  // the current scope.
   const classCounts = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const d of pipeline) {
+    for (const d of phaseFiltered) {
       const k = d.drug_class || "other";
       map[k] = (map[k] || 0) + 1;
     }
     return map;
-  }, [pipeline]);
+  }, [phaseFiltered]);
 
   const filtered = classFilter
-    ? pipeline.filter((d) => (d.drug_class || "other") === classFilter)
-    : pipeline;
+    ? phaseFiltered.filter((d) => (d.drug_class || "other") === classFilter)
+    : phaseFiltered;
 
   if (pipeline.length === 0) {
     return <EmptyState text="No pipeline data yet" />;
@@ -938,6 +984,34 @@ function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
 
   return (
     <div className="space-y-4">
+      {/* Phase-scope toggle: Pipeline (active R&D) vs Marketed (commercial)
+          vs All. Default lands on active pipeline so the count actually
+          reflects "what's in development", not "every CT.gov entry ever". */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-widest text-muted/70 mr-1">
+          Show:
+        </span>
+        {[
+          { id: "active" as const, label: "Pipeline", count: phaseCounts.active, hint: "Phase 1-3 + Filed" },
+          { id: "marketed" as const, label: "Marketed", count: phaseCounts.marketed, hint: "Phase 4 / approved" },
+          { id: "all" as const, label: "All", count: phaseCounts.all, hint: "Including discontinued / unknown" },
+        ].map((opt) => (
+          <button
+            key={opt.id}
+            onClick={() => { setPhaseScope(opt.id); setClassFilter(null); }}
+            title={opt.hint}
+            className={cn(
+              "px-2.5 py-1 rounded text-[11px] font-medium transition-colors",
+              phaseScope === opt.id
+                ? "bg-accent/15 text-accent"
+                : "text-muted hover:text-foreground hover:bg-surface-hover"
+            )}
+          >
+            {opt.label} ({opt.count})
+          </button>
+        ))}
+      </div>
+
       {/* Class filter chips — only show if there's >1 distinct class */}
       {classKeys.length > 1 && (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -953,7 +1027,7 @@ function PipelineTab({ pipeline }: { pipeline: Drug[] }) {
                 : "text-muted hover:text-foreground hover:bg-surface-hover"
             )}
           >
-            All ({pipeline.length})
+            All ({phaseFiltered.length})
           </button>
           {classKeys.map((k) => {
             const meta = DRUG_CLASS_META[k] || DRUG_CLASS_META.other;

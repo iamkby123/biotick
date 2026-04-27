@@ -33,6 +33,7 @@ from app.sync.drug_pipeline_sync import sync_drug_pipelines
 from app.sync.pdufa_date_extractor import sync_pdufa_dates_from_press_releases
 from app.sync.data_quality_audit import run_data_quality_audit
 from app.sync.drug_class_tagger import sync_drug_classes
+from app.sync.drug_dedup import sync_drug_dedup
 
 logger = logging.getLogger(__name__)
 
@@ -438,6 +439,18 @@ async def trigger_drug_classes(
         ),
     )
     return {**result, "message": f"Drug-class tagger started (limit={limit})."}
+
+
+@router.post("/drug-dedup")
+async def trigger_drug_dedup(ticker: str | None = None):
+    """One-shot dedup pass. Pass ?ticker=SNY for a single-company test
+    run; omit to dedupe everything. Idempotent."""
+    tickers = [ticker.upper()] if ticker else None
+    result = _fire(
+        "DRUG_DEDUP",
+        lambda: _wrap("DRUG_DEDUP", sync_drug_dedup, tickers=tickers),
+    )
+    return {**result, "message": f"Drug dedup started ({ticker or 'all companies'})."}
 
 
 @router.post("/data-quality")
