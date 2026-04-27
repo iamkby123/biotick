@@ -55,7 +55,7 @@ const navSections = [
   {
     label: "Edge",
     items: [
-      { href: "/news", label: "News", icon: Newspaper },
+      { href: "/news", label: "Feed", icon: Newspaper },
       { href: "/press-releases", label: "Press Releases", icon: Megaphone },
       { href: "/deals", label: "Deals", icon: Handshake },
       { href: "/congress-trades", label: "Congress Trades", icon: Landmark },

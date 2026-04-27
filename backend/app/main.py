@@ -36,6 +36,7 @@ from app.routers import (
     stripe_webhook,
     news,
     short_interest,
+    feed,
     press_releases,
     deals,
     adcom,
@@ -446,6 +447,7 @@ app.include_router(predictions.router)
 app.include_router(stripe_webhook.router)
 app.include_router(news.router)
 app.include_router(short_interest.router)
+app.include_router(feed.router)
 app.include_router(press_releases.router)
 app.include_router(deals.router)
 app.include_router(adcom.router)

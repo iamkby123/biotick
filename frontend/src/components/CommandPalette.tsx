@@ -36,7 +36,7 @@ const QUICK_LINKS = [
   { href: "/pdufa", label: "PDUFA Dates", icon: Pill, keywords: "fda approval" },
   { href: "/competitors", label: "Competitor Matrix", icon: Grid3x3, keywords: "indications" },
   { href: "/historical", label: "Historical Catalysts", icon: History, keywords: "past readouts" },
-  { href: "/news", label: "Biotech News", icon: Newspaper, keywords: "rss stat fierce endpoints articles" },
+  { href: "/news", label: "Biotech Feed", icon: Newspaper, keywords: "news feed rss stat fierce endpoints insider deals leadership movers catalysts" },
   { href: "/press-releases", label: "Press Releases", icon: Megaphone, keywords: "8k announcements pr" },
   { href: "/deals", label: "Deals", icon: Handshake, keywords: "m&a acquisitions partnerships material agreements officer changes" },
   { href: "/adcom", label: "FDA AdCom", icon: Users, keywords: "advisory committee meeting fda approval" },
