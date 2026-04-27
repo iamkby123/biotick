@@ -42,6 +42,44 @@ VALID_KINDS = {
     "catalyst",
 }
 
+# Headline keyword whitelist for the "dramatic" filter on RSS news.
+# A story must mention at least one of these tokens — otherwise it's
+# probably routine (analyst note, conference attendance, partner blurb).
+# Case-insensitive, applied as ILIKE %term% with OR.
+DRAMATIC_NEWS_TERMS = [
+    # FDA + regulatory
+    "fda approv", "fda reject", "complete response", "crl",
+    "pdufa", "advisory committee", "adcom",
+    "breakthrough designation", "fast track", "priority review",
+    "accelerated approval", "rmat", "orphan drug",
+    "ema approval", "ema rejected", "mhra approval",
+    "clinical hold", "lifted hold",
+    # Trial readouts
+    "phase 1 results", "phase 2 results", "phase 3 results",
+    "phase 1/2 results", "phase 2/3 results",
+    "topline", "primary endpoint", "missed", "failed", "succeeded",
+    "interim results", "pivotal", "biopsy",
+    # Corporate / capital events
+    "acquires", "acquired", "acquisition", "merger", "merge",
+    "to acquire", "buyout", "takeover", "tender offer",
+    "spin off", "divests", "spinout",
+    "layoff", "restructur", "files for bankruptcy", "chapter 11",
+    "delisting", "going private",
+    # People
+    "ceo steps", "ceo resigns", "ceo retires",
+    "cfo steps", "cfo resigns",
+    "appoints ceo", "appoints chief", "names ceo",
+    # Money
+    "raises", "secures", "closes financing", "ipo", "files for ipo",
+    "milestone payment",
+    # Drama
+    "halts", "halt", "discontin", "terminat", "withdraws",
+    "lawsuit", "settles", "subpoena", "investigation",
+    "positive", "negative",
+    "approval recommend",
+    "recall",
+]
+
 
 def _epoch(s: datetime | date | None) -> int | None:
     """Convert a date/datetime to a UTC epoch integer for stable sorting.
@@ -72,19 +110,27 @@ async def feed(
 
     items: list[dict[str, Any]] = []
 
-    # ── 1. RSS news ─────────────────────────────────────────────────────
+    # ── 1. RSS news (dramatic-only: must match at least one keyword) ───
     if "news" in kinds:
-        sql = """
+        # Build an OR-chain of LOWER(title) LIKE '%term%' clauses.
+        # We do it inline so we don't need a stored procedure / extension.
+        like_clauses = " OR ".join(
+            f"LOWER(title || ' ' || COALESCE(summary,'')) LIKE :t{i}"
+            for i in range(len(DRAMATIC_NEWS_TERMS))
+        )
+        params: dict[str, Any] = {"cutoff_dt": cutoff_dt, "ticker": ticker_up}
+        for i, term in enumerate(DRAMATIC_NEWS_TERMS):
+            params[f"t{i}"] = f"%{term.lower()}%"
+        sql = f"""
             SELECT id, source, title, url, summary, published_at, tickers
             FROM news_items
             WHERE published_at >= :cutoff_dt
               AND (CAST(:ticker AS text) IS NULL OR :ticker = ANY(tickers))
+              AND ({like_clauses})
             ORDER BY published_at DESC NULLS LAST
             LIMIT 200
         """
-        rows = (await db.execute(
-            text(sql), {"cutoff_dt": cutoff_dt, "ticker": ticker_up}
-        )).fetchall()
+        rows = (await db.execute(text(sql), params)).fetchall()
         for r in rows:
             items.append({
                 "kind": "news",
@@ -99,13 +145,15 @@ async def feed(
                 "_sort_ts": _epoch(r[5]),
             })
 
-    # ── 2. Press releases (8-K Items 7.01 / 8.01 / 2.02) ────────────────
+    # ── 2. Press releases (Items 7.01 + 8.01 only — material non-routine
+    # disclosures. Item 2.02 is quarterly-earnings boilerplate; skipped.)
     if "press_release" in kinds:
         sql = """
             SELECT id, ticker, headline, summary, url, item_code, filed_date
             FROM press_releases
             WHERE filed_date >= :cutoff
               AND (CAST(:ticker AS text) IS NULL OR ticker = :ticker)
+              AND (item_code IS NULL OR item_code IN ('7.01', '8.01'))
               AND headline IS NOT NULL
               AND LENGTH(headline) >= 15
               AND headline NOT ILIKE 'EX-%'
@@ -231,14 +279,20 @@ async def feed(
                    it.trade_type, it.transaction_date, it.shares,
                    it.price_per_share, it.total_value
             FROM insider_trades it
-            WHERE it.filing_date >= :cutoff
+            WHERE COALESCE(it.transaction_date, it.filing_date) >= :cutoff
+              AND it.transaction_date IS NOT NULL
               AND (CAST(:ticker AS text) IS NULL OR it.ticker = :ticker)
+              -- Real PURCHASE / SALE only — skip GRANT / TAX_WITHHOLDING /
+              -- OPTION_EXERCISE which are admin paperwork.
+              AND it.trade_type IN ('PURCHASE', 'SALE')
+              -- $1M floor OR C-level transactions (CEO/CFO trades of any
+              -- size carry signal value).
               AND (
-                it.total_value >= 500000
+                it.total_value >= 1000000
                 OR it.insider_title ILIKE '%CEO%'
                 OR it.insider_title ILIKE '%CFO%'
-                OR it.insider_title ILIKE '%President%'
-                OR it.insider_title ILIKE '%Chief%'
+                OR it.insider_title ILIKE '%Chief Executive%'
+                OR it.insider_title ILIKE '%Chief Financial%'
               )
             ORDER BY it.transaction_date DESC, it.id DESC
             LIMIT 200
@@ -280,13 +334,13 @@ async def feed(
                 "_sort_ts": _epoch(txn_date),
             })
 
-    # ── 6. Big stock movers (today's |change_pct| >= 10%, market_cap > $50M) ──
+    # ── 6. Crazy stock movers (today's |change_pct| >= 15%, mcap > $50M) ──
     if "mover" in kinds:
         sql = """
             SELECT ticker, name, price, price_change_pct, market_cap
             FROM companies
             WHERE price_change_pct IS NOT NULL
-              AND ABS(price_change_pct) >= 10
+              AND ABS(price_change_pct) >= 15
               AND market_cap >= 50000000
               AND (CAST(:ticker AS text) IS NULL OR ticker = :ticker)
             ORDER BY ABS(price_change_pct) DESC
@@ -396,12 +450,30 @@ async def feed_kinds(
     cutoff_dt = datetime.utcnow() - timedelta(days=days)
     counts: dict[str, int] = {}
 
+    # News — apply the same dramatic-keyword whitelist as the main feed.
+    like_clauses = " OR ".join(
+        f"LOWER(title || ' ' || COALESCE(summary,'')) LIKE :t{i}"
+        for i in range(len(DRAMATIC_NEWS_TERMS))
+    )
+    news_params: dict[str, Any] = {"cutoff_dt": cutoff_dt}
+    for i, term in enumerate(DRAMATIC_NEWS_TERMS):
+        news_params[f"t{i}"] = f"%{term.lower()}%"
     counts["news"] = (await db.execute(
-        text("SELECT COUNT(*) FROM news_items WHERE published_at >= :cutoff_dt"),
-        {"cutoff_dt": cutoff_dt},
+        text(f"""
+            SELECT COUNT(*) FROM news_items
+            WHERE published_at >= :cutoff_dt AND ({like_clauses})
+        """),
+        news_params,
     )).scalar() or 0
     counts["press_release"] = (await db.execute(
-        text("SELECT COUNT(*) FROM press_releases WHERE filed_date >= :c AND headline IS NOT NULL AND headline NOT ILIKE 'EX-%'"),
+        text("""
+            SELECT COUNT(*) FROM press_releases
+            WHERE filed_date >= :c
+              AND (item_code IS NULL OR item_code IN ('7.01','8.01'))
+              AND headline IS NOT NULL
+              AND LENGTH(headline) >= 15
+              AND headline NOT ILIKE 'EX-%'
+        """),
         {"c": cutoff},
     )).scalar() or 0
     counts["deal"] = (await db.execute(
@@ -415,12 +487,14 @@ async def feed_kinds(
     counts["insider"] = (await db.execute(
         text("""
             SELECT COUNT(*) FROM insider_trades
-            WHERE filing_date >= :c
-              AND (total_value >= 500000
+            WHERE COALESCE(transaction_date, filing_date) >= :c
+              AND transaction_date IS NOT NULL
+              AND trade_type IN ('PURCHASE', 'SALE')
+              AND (total_value >= 1000000
                    OR insider_title ILIKE '%CEO%'
                    OR insider_title ILIKE '%CFO%'
-                   OR insider_title ILIKE '%President%'
-                   OR insider_title ILIKE '%Chief%')
+                   OR insider_title ILIKE '%Chief Executive%'
+                   OR insider_title ILIKE '%Chief Financial%')
         """),
         {"c": cutoff},
     )).scalar() or 0
@@ -428,7 +502,7 @@ async def feed_kinds(
         text("""
             SELECT COUNT(*) FROM companies
             WHERE price_change_pct IS NOT NULL
-              AND ABS(price_change_pct) >= 10
+              AND ABS(price_change_pct) >= 15
               AND market_cap >= 50000000
         """)
     )).scalar() or 0

@@ -116,27 +116,31 @@ function dateKey(iso: string | null): string {
 
 // ─── Page ───────────────────────────────────────────────────────────────
 
+// Dramatic-news window. Hardcoded at 7 days because the feed is now
+// filtered to "big moves only" — events older than a week are stale and
+// should be looked up via the dedicated tabs (insider-trades, deals, etc.).
+const DRAMATIC_WINDOW_DAYS = 7;
+
 export default function NewsPage() {
   const [activeKind, setActiveKind] = useState<FeedKind | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [days, setDays] = useState(14);
 
   const { data, isLoading } = useQuery<FeedResponse>({
-    queryKey: ["feed", activeKind, days, page],
+    queryKey: ["feed", activeKind, page],
     queryFn: () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("per_page", "60");
-      params.set("days", String(days));
+      params.set("days", String(DRAMATIC_WINDOW_DAYS));
       if (activeKind) params.set("kind", activeKind);
       return fetchAPI(`/feed?${params}`);
     },
   });
 
   const { data: countData } = useQuery<KindCounts>({
-    queryKey: ["feed-kinds", days],
-    queryFn: () => fetchAPI(`/feed/kinds?days=${days}`),
+    queryKey: ["feed-kinds"],
+    queryFn: () => fetchAPI(`/feed/kinds?days=${DRAMATIC_WINDOW_DAYS}`),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -177,9 +181,9 @@ export default function NewsPage() {
           Biotech Feed
         </h1>
         <p className="text-sm text-muted mt-1">
-          One unified stream — RSS news, 8-K press releases, M&amp;A deals,
-          leadership changes, insider trades, big stock moves, and FDA
-          catalysts. Click a chip to filter.
+          Only the dramatic stuff from the last 7 days — FDA decisions,
+          Phase 3 readouts, M&amp;A, leadership shake-ups, ≥$1M insider trades,
+          and ±15% stock moves. Click a chip to focus on one kind.
         </p>
       </div>
 
@@ -219,23 +223,11 @@ export default function NewsPage() {
         })}
       </div>
 
-      {/* Search + window */}
+      {/* Search */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] uppercase tracking-widest text-muted/70 mr-1">
-          Window:
+        <span className="text-[10px] uppercase tracking-widest text-muted/60">
+          Last {DRAMATIC_WINDOW_DAYS} days · dramatic events only
         </span>
-        {[7, 14, 30, 60].map((d) => (
-          <button
-            key={d}
-            onClick={() => { setDays(d); setPage(1); }}
-            className={cn(
-              "px-2 py-1 rounded text-[11px] font-medium transition-colors",
-              days === d ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"
-            )}
-          >
-            {d}d
-          </button>
-        ))}
 
         <div className="ml-auto relative w-full sm:w-64">
           <SearchIcon className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
