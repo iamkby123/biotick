@@ -24,17 +24,25 @@ async def freshness(db: AsyncSession = Depends(get_db)):
     means "the most recent article we've ingested"; for prices it
     means "the latest market quote refresh"; etc.
     """
+    # Use `created_at` (when WE ingested the row) rather than the
+    # source document's date — that's what "freshness" actually means
+    # for a user. A patent filed in 2018 but ingested today shouldn't
+    # show as 8 years stale.
+    # All queries fall back to `created_at` (when our pipeline inserted
+    # the row) when the source-document date is a DATE-only column with
+    # no time component. Otherwise "freshness" sticks at midnight UTC of
+    # the filing day rather than reflecting when we ingested.
     queries: dict[str, str] = {
-        "news":          "SELECT MAX(published_at) FROM news_items",
-        "press":         "SELECT MAX(filed_date::timestamp) FROM press_releases",
-        "deals":         "SELECT MAX(filed_date::timestamp) FROM deals",
-        "insider":       "SELECT MAX(transaction_date::timestamp) FROM insider_trades",
-        "filings":       "SELECT MAX(filed_date::timestamp) FROM sec_filings",
+        "news":          "SELECT MAX(GREATEST(published_at, created_at)) FROM news_items",
+        "press":         "SELECT MAX(created_at) FROM press_releases",
+        "deals":         "SELECT MAX(created_at) FROM deals",
+        "insider":       "SELECT MAX(created_at) FROM insider_trades",
+        "filings":       "SELECT MAX(created_at) FROM sec_filings",
         "prices":        "SELECT MAX(updated_at) FROM companies WHERE updated_at IS NOT NULL",
-        "short_interest":"SELECT MAX(report_date::timestamp) FROM short_interest",
-        "congress":      "SELECT MAX(filing_date::timestamp) FROM congress_trades",
-        "patents":       "SELECT MAX(filing_date::timestamp) FROM patents",
-        "adcom":         "SELECT MAX(meeting_date::timestamp) FROM adcom_meetings",
+        "short_interest":"SELECT MAX(created_at) FROM short_interest",
+        "congress":      "SELECT MAX(created_at) FROM congress_trades",
+        "patents":       "SELECT MAX(created_at) FROM patents",
+        "adcom":         "SELECT MAX(created_at) FROM adcom_meetings",
     }
     out: dict[str, str | None] = {}
     for key, sql in queries.items():
